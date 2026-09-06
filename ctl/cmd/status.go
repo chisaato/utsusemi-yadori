@@ -4,29 +4,18 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
-
-	"utsusemi/ctl/internal/binmgr"
-	"utsusemi/ctl/internal/gadgetcfg"
-	"utsusemi/ctl/internal/srv"
 )
 
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "status",
 		RunE: func(c *cobra.Command, _ []string) error {
-			p := paths()
-			m, err := binmgr.New(p)
+			// 与 api status / GET /api/status 完全同构（复用 ops 层）
+			data, err := opsFor(paths()).Status()
 			if err != nil {
 				return fail(c, err)
 			}
-			r, _ := gadgetcfg.LoadRules(p)
-			emit(c, Envelope{OK: true, Data: map[string]any{
-				"server":  srv.New(p).Status(),
-				"servers": m.List("server"),
-				"gadgets": m.List("gadget"),
-				"rules":   r,
-				"web":     m.S.Web,
-			}})
+			emit(c, Envelope{OK: true, Data: data})
 			return nil
 		},
 	}

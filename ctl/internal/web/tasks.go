@@ -33,6 +33,9 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
+// NewTaskID 供调用方（cmd/ops.go）预生成任务 id，便于 Start 前后一致
+func NewTaskID() string { return newID() }
+
 // Start 注册并异步执行 fn；upd 更新进度（phase/detail），fn 返回错误即终态 error
 func (m *TaskManager) Start(id string, fn func(upd func(phase, detail string) error) error) {
 	if id == "" {

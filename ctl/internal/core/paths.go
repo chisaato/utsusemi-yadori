@@ -39,9 +39,14 @@ func (p Paths) Rules() string     { return filepath.Join(p.Root, "rules.json") }
 func (p Paths) PidFile() string   { return filepath.Join(p.Root, "frida-server.pid") }
 func (p Paths) ServerDir() string { return filepath.Join(p.Root, "frida-bin", "server") }
 func (p Paths) GadgetDir() string { return filepath.Join(p.Root, "frida-bin", "gadget") }
-func (p Paths) Logs() string      { return filepath.Join(p.Root, "logs") }
+func (p Paths) Logs() string     { return filepath.Join(p.Root, "logs") }
 func (p Paths) ServerLog() string { return filepath.Join(p.Logs(), "frida-server.log") }
 func (p Paths) CtlLog() string    { return filepath.Join(p.Logs(), "ctl.log") }
+func (p Paths) WebLog() string    { return filepath.Join(p.Logs(), "web.log") }
+
+// Web 进程（Gin 远程服务）运行态文件
+func (p Paths) WebPidFile() string  { return filepath.Join(p.Root, "web.pid") }
+func (p Paths) WebPortFile() string { return filepath.Join(p.Root, "web.port") }
 
 // GadgetConfig 位于发布区：zygisk so 运行在 app 进程，读不到 /data/adb
 func (p Paths) GadgetConfig() string { return filepath.Join(p.Stage, "gadget.json") }

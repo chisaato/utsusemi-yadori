@@ -1,8 +1,9 @@
 SKIPUNZIP=1
 
 MODULE_ID=utsusemi
-DATA_DIR=/data/adb/utsusemi
-STAGE_DIR=/data/local/tmp/utsusemi
+# 默认值与硬编码等价；带前缀 env 仅供 scripts/simulate-install.sh 本地模拟注入
+DATA_DIR="${UTSUSEMI_DATA_DIR:-/data/adb/utsusemi}"
+STAGE_DIR="${UTSUSEMI_STAGE_DIR:-/data/local/tmp/utsusemi}"
 
 if [ "$ARCH" != "arm" ] && [ "$ARCH" != "arm64" ] && [ "$ARCH" != "x86" ] && [ "$ARCH" != "x64" ]; then
   abort "! Unsupported platform: $ARCH"
@@ -23,7 +24,10 @@ extract "$ZIPFILE" 'action.sh' "$MODPATH"
 extract "$ZIPFILE" 'uninstall.sh' "$MODPATH"
 
 # ctl 与 zygisk so 按设备 ABI 选装（zip 内 lib/<abi>/utsusemi-ctl、zygisk/<abi>.so）
+# Magisk 的 $ARCH ∈ {arm, arm64, x86, x64}，需映射到 zip 内 NDK ABI 目录名
 MAGISK_ABI="$ARCH"
+[ "$ARCH" = "arm" ] && MAGISK_ABI=armeabi-v7a
+[ "$ARCH" = "arm64" ] && MAGISK_ABI=arm64-v8a
 [ "$ARCH" = "x64" ] && MAGISK_ABI=x86_64
 
 mkdir -p "$MODPATH/bin" "$MODPATH/zygisk"

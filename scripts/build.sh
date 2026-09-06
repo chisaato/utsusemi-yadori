@@ -55,4 +55,5 @@ echo "built: $ZIP"
 unzip -l "$ZIP" | tail -3
 
 # .gitkeep 同 .placeholder：rm -rf 后重建，git 永远干净
-touch template/webroot/.gitkeep
+# 行内注释: 此处 cwd 已在 $STAGE，必须用绝对路径
+touch "$ROOT/template/webroot/.gitkeep"

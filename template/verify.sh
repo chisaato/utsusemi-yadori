@@ -25,6 +25,9 @@ extract() {
   [ -f "$file_path" ] || abort_verify "$file not exists"
   unzip $opts "$zip" "$file.sha256sum" -d "$TMPDIR_FOR_VERIFY" >&2
   [ -f "$hash_path" ] || abort_verify "$file.sha256sum not exists"
-  (echo "$(cat "$hash_path")  $file_path" | sha256sum -c -s -) || abort_verify "Failed to verify $file"
+  # 显式取 hash 比对，避免 -c/-s 短选项在 busybox/toybox/GNU coreutils 间的差异
+  expected=$(awk '{print $1}' "$hash_path")
+  actual=$(sha256sum "$file_path" | awk '{print $1}')
+  [ "$actual" = "$expected" ] || abort_verify "Failed to verify $file"
   ui_print "- Verified $file" >&1
 }

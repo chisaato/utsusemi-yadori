@@ -53,3 +53,6 @@ rm -f "$ZIP"
 zip -r -X "$ZIP" . >/dev/null
 echo "built: $ZIP"
 unzip -l "$ZIP" | tail -3
+
+# .gitkeep 同 .placeholder：rm -rf 后重建，git 永远干净
+touch template/webroot/.gitkeep

@@ -10,10 +10,13 @@ cd "$ROOT"
 echo "== webui =="
 command -v bun >/dev/null || { echo "ERROR: bun not found (frontend is required)"; exit 1; }
 ( cd web && bun install && bun run build )
-rm -rf template/webroot
+# rm -rf 双写目标：清掉旧 hash 资产，避免残留累积
+rm -rf template/webroot ctl/webui/dist
 mkdir -p template/webroot ctl/webui/dist
 cp -r web/dist/. template/webroot/
 cp -r web/dist/. ctl/webui/dist/
+# .placeholder 与产物并存：git 忽略产物但保留占位，空仓 clone 后仍可编译
+touch ctl/webui/dist/.placeholder
 
 echo "== ctl =="
 scripts/build-ctl.sh

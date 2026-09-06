@@ -2,5 +2,11 @@
 build/
 ctl/utsusemi-ctl
 
-# dist
-dist/
+# 根 dist/：打包 zip 产物
+/dist/
+
+# 前端构建产物（build.sh 双写生成，不入库；空仓由 .placeholder 兜底编译）
+template/webroot/*
+!template/webroot/.gitkeep
+ctl/webui/dist/*
+!ctl/webui/dist/.placeholder

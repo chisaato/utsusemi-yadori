@@ -89,21 +89,28 @@ utsusemi-yadori/
 ├── manifest.json        # frida-bin 清单（所有二进制的元数据索引）
 ├── logs/                # ctl / frida-server 日志
 └── frida-bin/
-    ├── server/          # 文件名: {variant}_{version}_{arch}
+    ├── server/
     │   ├── official_17.2.14_arm64
     │   ├── florida_17.9.1_arm64
-    │   └── custom_mybuild_arm64
+    │   └── <用户导入文件保留原名，如 frida-server-test>
     └── gadget/
         ├── official_17.2.14_arm64.so
         ├── florida_17.9.1_arm64.so
-        └── custom_mybuild_arm64.so
+        └── <用户导入文件保留原名>
 ```
 
 设计要点：
 
-- **无软链接**。激活与否完全由 `settings.json` 中的文件名决定，ctl 启动 server 时直接 `exec` 对应文件；生成 `gadget.json` 时把激活 gadget 展开为绝对路径。
-- **两级扁平**：`frida-bin/{server,gadget}/` 之下不再按版本建目录，避免嵌套过深；版本信息由文件名 + manifest 承载。
-- **未知版本兼容**：`variant=custom` 时 `version` 允许任意字符串（`unknown`、用户输入、日期）。系统对 version 只做展示与去重，**不做语义解析**；文件名冲突时自动追加时间戳后缀。用户自编译二进制只需保持"可执行 ELF / 共享库"即可被导入。
+- **manifest.json 是唯一事实来源（Single Source of Truth），文件名只是不透明 key**。系统任何功能都不解析文件名；`{variant}_{version}_{arch}` 仅是 ctl 自己下载时的**命名建议**，用户导入的文件**保留原始文件名**，元数据全部记录在 manifest 中。用户改文件名/用任意名字导入都不会破坏系统——启动时按 settings 引用的 key 查 manifest 拿到实际路径即可。
+- **导入时 ELF 自动探测（Go `debug/elf` 标准库）**，不信任任何用户输入：
+  - `e_machine` → 自动判定 `arm64 / arm / x86_64 / x86`；
+  - `e_type` → server 须为 `ET_EXEC`（可执行），gadget 须为 `ET_DYN`（共享库）；
+  - 非 ELF、架构与设备不符、类型与 bin 类型不符 → 导入直接拒绝并给出原因；
+  - 与设备架构不匹配的文件仍允许导入（多架构设备/备份场景），但列表面会标注"非本机架构"且不可激活。
+- **无软链接**。激活与否完全由 `settings.json` 中的文件 key 决定，ctl 启动 server 时直接 `exec` 对应文件；生成 `gadget.json` 时把激活 gadget 展开为绝对路径。
+- **两级扁平**：`frida-bin/{server,gadget}/` 之下不再按版本建目录，避免嵌套过深。
+- **未知版本兼容**：`variant=custom` 时 `version` 允许任意字符串（默认 `unknown`，用户可填如 `mybuild-20260907`）。系统对 version 只做展示与去重，**不做语义解析**；文件 key 冲突（同名不同文件）时自动追加时间戳后缀。
+- **一致性自愈**：ctl 启动与 `bin list` 时做目录↔manifest 对账——孤儿文件自动登记为 `custom/unknown`；manifest 中指向的文件丢失则标记失效并在 UI 提示重新导入，激活项失效时拒绝启动并报清晰错误。
 
 ### 4.2 settings.json
 
@@ -136,15 +143,18 @@ utsusemi-yadori/
       "variant": "official",
       "version": "17.2.14",
       "arch": "arm64",
+      "elf_type": "exec",
       "source": "https://github.com/frida/frida/releases/tag/17.2.14",
       "sha256": "...",
       "size": 12345678,
       "added_at": "2026-09-07T12:00:00+08:00"
     }
   ],
-  "gadgets": [ { "file": "custom_mybuild_arm64.so", "variant": "custom", "version": "unknown", "...": "..." } ]
+  "gadgets": [ { "file": "frida-gadget-test", "variant": "custom", "version": "unknown", "arch": "arm64", "elf_type": "dyn", "...": "..." } ]
 }
 ```
+
+注意：`file` 是目录内的实际文件名（key），元数据（variant/version/arch/elf_type）在导入/下载时一次性写入，之后**只信 manifest 不信文件名**。
 
 ### 4.4 gadget.json（Zygisk 层读取，兼容 ZygiskFrida 配置结构）
 
@@ -182,7 +192,9 @@ utsusemi-ctl gadget apps                          # 列出已安装应用（包�
 utsusemi-ctl bin list                             # 列出 manifest
 utsusemi-ctl bin sources                          # 列出可用源与最新版本
 utsusemi-ctl bin download --variant official|florida|undetected --type server|gadget [--version x.y.z]
-utsusemi-ctl bin import --type server|gadget --file <path> [--name mybuild] [--version unknown]
+utsusemi-ctl bin import --type server|gadget --file <path> [--version unknown]
+                                                   # --name 已移除: 保留原始文件名作 key
+                                                   # arch/elf_type 由 ELF 头自动探测, 非法文件拒绝导入
 utsusemi-ctl bin remove <file> / bin cleanup      # 删除未激活项
 utsusemi-ctl web start|stop [--port]              # 按需启动/停止 Gin 服务
 utsusemi-ctl api <subcommand>                     # KSU WebUI 桥接: 与 REST API 同构的 JSON 输出

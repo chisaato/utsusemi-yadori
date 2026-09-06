@@ -1,0 +1,3 @@
+# 统一走 npmmirror 加速
+[install]
+registry = "https://registry.npmmirror.com"

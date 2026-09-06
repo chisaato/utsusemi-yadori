@@ -29,9 +29,10 @@ export const transportLabel: string =
 let cbSeq = 0
 
 /**
- * KernelSU 系管理器的 exec 为「全局回调名」风格：
- *   ksu.exec(cmd, timeoutSec, cbName)
- * 部分分叉为四参（env 在 cb 前），做一次兼容重试。
+ * KernelSU 系管理器注入的原生签名（KernelSU/SukiSU 一致）：
+ *   exec(cmd) / exec(cmd, cbName) / exec(cmd, optionsJson, cbName)
+ * optionsJson 为 JSON 字符串（仅支持 cwd/env），原生无 timeout 参数；
+ * timeoutSec 仅用于本地看门狗。参数个数/类型不匹配会同步抛 "method not found"。
  */
 function ksuExec(cmd: string, timeoutSec = 300): Promise<{ errno: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -58,10 +59,11 @@ function ksuExec(cmd: string, timeoutSec = 300): Promise<{ errno: number; stdout
     }
 
     try {
-      ksu?.exec(cmd, timeoutSec, cbName)
+      ksu?.exec(cmd, cbName)
     } catch {
       try {
-        ksu?.exec(cmd, timeoutSec, '{}', cbName)
+        // 兜底：三参重载（optionsJson 必须为字符串）
+        ksu?.exec(cmd, '{}', cbName)
       } catch (e) {
         cleanup()
         reject(new ApiError('ksu.exec 调用失败：' + String(e)))

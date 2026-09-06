@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
-# 一键打包: ctl(go) + zygisk(ndk/cmake) + template → dist/utsusemi-<version>.zip
+# 一键打包: webui(bun/vite) + ctl(go) + zygisk(ndk/cmake) + template → dist/utsusemi-<version>.zip
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:-v0.1.0}"
 VERSION_CODE="${VERSION_CODE:-1}"
 cd "$ROOT"
+
+# —— webui：构建前端并双写（template/webroot 供 KSU WebUI；ctl/webui/dist 供 go:embed）——
+echo "== webui =="
+command -v bun >/dev/null || { echo "ERROR: bun not found (frontend is required)"; exit 1; }
+( cd web && bun install && bun run build )
+rm -rf template/webroot
+mkdir -p template/webroot ctl/webui/dist
+cp -r web/dist/. template/webroot/
+cp -r web/dist/. ctl/webui/dist/
 
 echo "== ctl =="
 scripts/build-ctl.sh

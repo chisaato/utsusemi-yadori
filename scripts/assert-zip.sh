@@ -15,6 +15,14 @@ for f in "${need[@]}"; do
   unzip -l "$ZIP" "$f.sha256sum" | grep -q "$f.sha256sum" || { echo "MISSING: $f.sha256sum"; exit 1; }
 done
 
+# webroot 必须是真前端产物：有 assets 且 index.html 引用相对路径 hash 资源（非占位页）
+if ! unzip -l "$ZIP" 'webroot/assets/*' | grep -q 'assets/'; then
+  echo "webroot/assets empty (placeholder build?)"; exit 1
+fi
+if ! unzip -p "$ZIP" webroot/index.html | grep -q '\./assets/'; then
+  echo "webroot/index.html does not reference ./assets/"; exit 1
+fi
+
 # module.prop 占位符必须已渲染
 if unzip -p "$ZIP" module.prop | grep -q '@VERSION'; then
   echo "module.prop not rendered"; exit 1

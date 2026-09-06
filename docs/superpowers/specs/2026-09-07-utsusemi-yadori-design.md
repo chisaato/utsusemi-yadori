@@ -129,6 +129,10 @@ utsusemi-yadori/
     "enabled": false,
     "port": 23333,
     "token": "随机生成"
+  },
+  "download": {
+    "mirror": "",
+    "github_api": "https://api.github.com"
   }
 }
 ```

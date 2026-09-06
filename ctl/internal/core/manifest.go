@@ -145,11 +145,16 @@ func Reconcile(p Paths, m *Manifest) []string {
 				continue
 			}
 			if _, ok := m.Find(binType, e.Name()); !ok {
-				m.Upsert(binType, Binary{
+				// 孤儿登记：能读出 ELF 头则尽量补全 arch/elf_type
+				b := Binary{
 					File: e.Name(), Variant: "custom", Version: "unknown",
 					Arch: "unknown", ELFType: "unknown",
 					AddedAt: time.Now(),
-				})
+				}
+				if info, err := InspectFile(filepath.Join(dir, e.Name())); err == nil {
+					b.Arch, b.ELFType = info.Arch, info.Type
+				}
+				m.Upsert(binType, b)
 				notes = append(notes, binType+"/"+e.Name()+" registered as orphan")
 			}
 		}

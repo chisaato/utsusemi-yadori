@@ -6,11 +6,28 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 )
 
 var errNotELF = errors.New("not an ELF file")
 
 func IsNotELF(err error) bool { return errors.Is(err, errNotELF) }
+
+// archByGOARCH 将 Go GOARCH 映射为项目规范架构名（frida 资产命名同构）
+var archByGOARCH = map[string]string{
+	"arm64": "arm64",
+	"arm":   "arm",
+	"amd64": "x86_64",
+	"386":   "x86",
+}
+
+// DeviceArch 返回当前设备/宿主的规范架构字符串
+func DeviceArch() string {
+	if a, ok := archByGOARCH[runtime.GOARCH]; ok {
+		return a
+	}
+	return "unknown"
+}
 
 type ELFInfo struct {
 	Arch string // arm64|arm|x86_64|x86|unknown

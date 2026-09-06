@@ -1,0 +1,6 @@
+id=utsusemi
+name=Utsusemi-Yadori
+version=@VERSION@
+versionCode=@VERSION_CODE@
+author=utsusemi
+description=Frida manager: server + zygisk gadget injection

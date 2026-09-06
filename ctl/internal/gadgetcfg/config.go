@@ -1,10 +1,14 @@
 package gadgetcfg
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -76,7 +80,7 @@ type Config struct {
 	Targets []Target `json:"targets"`
 }
 
-// Apply 由 rules+settings+manifest 生成 gadget.json（原子写）
+// Apply 由 rules+settings+manifest 生成发布区 gadget.json，并把 gadget 同步到发布区（原子写）
 func Apply(p core.Paths) error {
 	s, err := core.LoadSettings(p)
 	if err != nil {
@@ -90,7 +94,11 @@ func Apply(p core.Paths) error {
 	if err != nil {
 		return err
 	}
+	if err := p.EnsureStage(); err != nil {
+		return err
+	}
 
+	// resolve: manifest key → 控制区源文件 → 同步到发布区（sha 相同跳过）
 	resolve := func(key string) (string, error) {
 		if key == "" {
 			key = s.Gadget.Active
@@ -105,7 +113,12 @@ func Apply(p core.Paths) error {
 		if b.Missing {
 			return "", fmt.Errorf("gadget %q file missing on disk", key)
 		}
-		return p.GadgetDir() + "/" + key, nil
+		src := filepath.Join(p.GadgetDir(), key)
+		dst := filepath.Join(p.Stage, key)
+		if err := syncIfChanged(src, dst); err != nil {
+			return "", err
+		}
+		return dst, nil
 	}
 
 	cfg := Config{Targets: []Target{}}
@@ -181,4 +194,47 @@ func pkgSet(out string) map[string]bool {
 		}
 	}
 	return set
+}
+
+// syncIfChanged: 源与目标 sha256 相同则跳过，否则复制（0644）；发布区不是事实来源，可随时重建
+func syncIfChanged(src, dst string) error {
+	srcSum, err := fileSum(src)
+	if err != nil {
+		return err
+	}
+	if dstSum, err := fileSum(dst); err == nil && dstSum == srcSum {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp := dst + ".sync"
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err = io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err = out.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
+func fileSum(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

@@ -22,12 +22,11 @@ func TestPathsEnsureCreatesLayout(t *testing.T) {
 func TestPathsFileLocations(t *testing.T) {
 	p := New("/data/adb/utsusemi")
 	want := map[string]string{
-		p.Settings():     "/data/adb/utsusemi/settings.json",
-		p.Manifest():     "/data/adb/utsusemi/manifest.json",
-		p.Rules():        "/data/adb/utsusemi/rules.json",
-		p.GadgetConfig(): "/data/adb/utsusemi/gadget.json",
-		p.PidFile():      "/data/adb/utsusemi/frida-server.pid",
-		p.ServerLog():    "/data/adb/utsusemi/logs/frida-server.log",
+		p.Settings():  "/data/adb/utsusemi/settings.json",
+		p.Manifest():  "/data/adb/utsusemi/manifest.json",
+		p.Rules():     "/data/adb/utsusemi/rules.json",
+		p.PidFile():   "/data/adb/utsusemi/frida-server.pid",
+		p.ServerLog(): "/data/adb/utsusemi/logs/frida-server.log",
 	}
 	for got, w := range want {
 		if got != w {
@@ -37,5 +36,19 @@ func TestPathsFileLocations(t *testing.T) {
 	// 模块目录在数据根的兄弟 modules/utsusemi 下（可测试性）
 	if got, want := p.ModuleProp(), "/data/adb/modules/utsusemi/module.prop"; got != want {
 		t.Fatalf("ModuleProp got %s want %s", got, want)
+	}
+}
+
+func TestPathsStageDefaultAndOverride(t *testing.T) {
+	def := New("/data/adb/utsusemi")
+	if def.Stage != "/data/local/tmp/utsusemi" {
+		t.Fatalf("default stage: %s", def.Stage)
+	}
+	if def.GadgetConfig() != "/data/local/tmp/utsusemi/gadget.json" {
+		t.Fatalf("gadget config moved to stage: %s", def.GadgetConfig())
+	}
+	ov := NewStage("/r", "/s")
+	if ov.Stage != "/s" || ov.GadgetConfig() != "/s/gadget.json" {
+		t.Fatalf("override: %+v", ov)
 	}
 }

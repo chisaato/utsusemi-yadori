@@ -3,11 +3,17 @@ package gadgetcfg
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"utsusemi/ctl/internal/core"
 )
+
+func newStagePaths(t *testing.T) core.Paths {
+	t.Helper()
+	return core.NewStage(t.TempDir(), filepath.Join(t.TempDir(), "stage"))
+}
 
 func seedGadget(t *testing.T, p core.Paths, file string) {
 	t.Helper()
@@ -22,7 +28,7 @@ func seedGadget(t *testing.T, p core.Paths, file string) {
 }
 
 func TestApplyGeneratesZygiskFridaCompatibleConfig(t *testing.T) {
-	p := core.New(t.TempDir())
+	p := newStagePaths(t)
 	p.Ensure()
 	seedGadget(t, p, "official_1.0_arm64.so")
 
@@ -47,7 +53,7 @@ func TestApplyGeneratesZygiskFridaCompatibleConfig(t *testing.T) {
 	}
 	t0 := c.Targets[0]
 	if t0.AppName != "com.a" || !t0.Enabled || t0.StartUpDelayMS != 150 ||
-		len(t0.InjectedLibraries) != 1 || t0.InjectedLibraries[0].Path != p.GadgetDir()+"/official_1.0_arm64.so" {
+		len(t0.InjectedLibraries) != 1 || t0.InjectedLibraries[0].Path != filepath.Join(p.Stage, "official_1.0_arm64.so") {
 		t.Fatalf("t0 %+v", t0)
 	}
 	if !c.Targets[1].ChildGating.Enabled || c.Targets[1].ChildGating.Mode != "freeze" {
@@ -56,7 +62,7 @@ func TestApplyGeneratesZygiskFridaCompatibleConfig(t *testing.T) {
 }
 
 func TestApplyEmptyRules(t *testing.T) {
-	p := core.New(t.TempDir())
+	p := newStagePaths(t)
 	p.Ensure()
 	if err := Apply(p); err != nil {
 		t.Fatal(err)
@@ -68,7 +74,7 @@ func TestApplyEmptyRules(t *testing.T) {
 }
 
 func TestApplyFailsWhenGadgetMissing(t *testing.T) {
-	p := core.New(t.TempDir())
+	p := newStagePaths(t)
 	p.Ensure()
 	s, _ := core.LoadSettings(p)
 	s.Gadget.Active = "ghost.so"
@@ -100,5 +106,41 @@ func TestListAppsViaFakePm(t *testing.T) {
 	}
 	if len(apps) != 3 || !byPkg["com.sys"].System || byPkg["com.user1"].System {
 		t.Fatalf("apps %+v", apps)
+	}
+}
+
+func TestApplyPublishesGadgetToStage(t *testing.T) {
+	p := newStagePaths(t)
+	p.Ensure()
+	seedGadget(t, p, "official_1.0_arm64.so")
+	r := Rules{Rules: []Rule{{AppName: "com.a", Enabled: true}}}
+	if err := r.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(p); err != nil {
+		t.Fatal(err)
+	}
+	staged := filepath.Join(p.Stage, "official_1.0_arm64.so")
+	if _, err := os.Stat(staged); err != nil {
+		t.Fatal("gadget not published to stage")
+	}
+	raw, _ := os.ReadFile(p.GadgetConfig())
+	var c Config
+	json.Unmarshal(raw, &c)
+	if c.Targets[0].InjectedLibraries[0].Path != staged {
+		t.Fatalf("path should point to stage: %+v", c.Targets[0])
+	}
+	// 二次 apply（内容相同）幂等不报错
+	if err := Apply(p); err != nil {
+		t.Fatal(err)
+	}
+	// 源更新后 apply 应刷新发布区（发布区不是事实来源）
+	os.WriteFile(filepath.Join(p.GadgetDir(), "official_1.0_arm64.so"), []byte("fake-so-v2"), 0o644)
+	if err := Apply(p); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(staged)
+	if string(got) != "fake-so-v2" {
+		t.Fatalf("stage not refreshed: %q", string(got))
 	}
 }

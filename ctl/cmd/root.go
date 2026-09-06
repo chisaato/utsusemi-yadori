@@ -20,6 +20,7 @@ type Envelope struct {
 
 var (
 	dataRoot string
+	stageDir string
 	asJSON   bool
 )
 
@@ -31,6 +32,7 @@ func NewRoot() *cobra.Command {
 		SilenceUsage:  true,
 	}
 	root.PersistentFlags().StringVar(&dataRoot, "data-root", core.DefaultRoot, "数据根目录")
+	root.PersistentFlags().StringVar(&stageDir, "stage", core.DefaultStage, "发布区目录（app 进程可读）")
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "以 JSON 信封输出")
 	root.AddCommand(newVersionCmd(), newBinCmd(), newServerCmd(), newGadgetCmd(), newStatusCmd())
 	return root
@@ -46,7 +48,7 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
-func paths() core.Paths { return core.New(dataRoot) }
+func paths() core.Paths { return core.NewStage(dataRoot, stageDir) }
 
 // emit 统一输出：--json 走信封到 stdout；否则人读文本
 func emit(c *cobra.Command, env Envelope) {

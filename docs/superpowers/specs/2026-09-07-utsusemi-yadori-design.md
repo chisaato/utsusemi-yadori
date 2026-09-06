@@ -82,10 +82,12 @@ utsusemi-yadori/
 
 ### 4.1 目录布局（扁平化，无软链接）
 
+**控制区**（root 读写，app 进程不可见）：
+
 ```text
 /data/adb/utsusemi/
 ├── settings.json        # 全局设置（激活项指向文件名，非路径链接）
-├── gadget.json          # Zygisk 注入配置（ctl 生成，原子写入）
+├── rules.json           # 用户层注入规则（ctl 编辑）
 ├── manifest.json        # frida-bin 清单（所有二进制的元数据索引）
 ├── logs/                # ctl / frida-server 日志
 └── frida-bin/
@@ -98,6 +100,17 @@ utsusemi-yadori/
         ├── florida_17.9.1_arm64.so
         └── <用户导入文件保留原名>
 ```
+
+**发布区 staging**（app 进程可读；zygisk so 运行在 app 进程内，SELinux 阻止其读取 `/data/adb`，故 gadget 实际加载路径必须在 `/data/local/tmp` 下，沿用 ZygiskFrida 验证过的方案）：
+
+```text
+/data/local/tmp/utsusemi/
+├── gadget.json          # Zygisk 层读取的注入配置（ctl apply 时生成）
+└── <gadget so 发布副本>  # ctl apply 时从 frida-bin/gadget/ 同步（sha 相同则跳过），0644
+```
+
+- ctl `gadget apply` 负责把激活 gadget 复制进发布区并把 `gadget.json` 内 `injected_libraries.path` 指向发布区文件；server 二进制与全部元数据永不进入发布区。
+- 发布区可整体重建（`rm -rf` 后重新 apply 即可），不是事实来源。
 
 设计要点：
 
@@ -182,7 +195,7 @@ utsusemi-yadori/
 }
 ```
 
-与 ZygiskFrida 的 `config.json` 结构一致（配置路径在源码中改为 `/data/adb/utsusemi/gadget.json`），保持 native 层改动最小。
+与 ZygiskFrida 的 `config.json` 结构一致（native 层读取路径改为 `/data/local/tmp/utsusemi/gadget.json`，见 §4.1 发布区），保持 native 层改动最小。
 
 ## 5. utsusemi-ctl 设计
 
@@ -300,7 +313,7 @@ set_perm "$MODPATH/zygisk" …  # 按 Zygisk 惯例 0755
 
 1. `web/`：`bun install && bun run build` → 产物拷贝至 `template/webroot/` 与 `ctl/webui/dist/`（后者供 embed）；
 2. `ctl/`：`CGO_ENABLED=0 go build`，按目标 ABI 交叉编译（android/arm64、android/arm、android/amd64、android/386）；
-3. `native/zygisk/`：NDK（ndk-build 或迁移 CMake）产出 `zygisk/<abi>.so`；
+3. `native/zygisk/`：NDK + CMake 产出 `zygisk/<abi>.so`（剥离 Riru；dobby 以源码 vendor 至 `native/dobby`，STL 用 `c++_static`，不依赖 gradle/prefab）；
 4. 组装 `template/` + 产物 → `utsusemi-<version>.zip`（LF 行尾校验、可执行位校验）。
 
 CI（GitHub Actions）后续在实现阶段补充：矩阵打包 + release 附 updateJson。
@@ -315,7 +328,7 @@ CI（GitHub Actions）后续在实现阶段补充：矩阵打包 + release 附 u
 
 ## 10. 风险与开放问题
 
-1. **SELinux**：zygisk so 注入 app 进程读 `/data/adb/utsusemi/frida-bin/` 的权限/上下文需真机确认（ZygiskFrida 用 `/data/local/tmp`；迁到 `/data/adb` 后需 sepolicy.rule 或沿用其 remapper 规避）。→ 实现首日真机验证，必要时加 `sepolicy.rule`。
+1. **SELinux**：已决策——zygisk so 与 gadget 加载均在 app 进程，读不到 `/data/adb`；gadget.json 与 gadget so 经 ctl 发布到 `/data/local/tmp/utsusemi/`（0644，沿用 ZygiskFrida 验证方案），无需 sepolicy.rule。
 2. **undetected-frida 产物命名不规则**（有无 `.so` 后缀不一致）：downloader 按正则 + 类型启发式匹配，失败时允许用户手填 URL。
 3. **Gin 远程服务安全**：仅按需启动 + token；文档中警示局域网风险。
 4. **module.prop description 动态回写**在不同管理器的缓存行为差异（部分管理器缓存描述）——可接受，作为已知限制记录。

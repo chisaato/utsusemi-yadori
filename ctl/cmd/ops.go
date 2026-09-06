@@ -264,10 +264,17 @@ func (o *opsImpl) WebInfo() (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 实际端口以 web.port 文件为准（--port 0 自动分配场景 serve 回写）
+	port := s.Web.Port
+	if raw, err := os.ReadFile(o.P.WebPortFile()); err == nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil && v > 0 {
+			port = v
+		}
+	}
 	return map[string]any{
 		"running": webAlive(o.P),
 		"enabled": s.Web.Enabled,
-		"port":    s.Web.Port,
+		"port":    port,
 		"token":   s.Web.Token,
 	}, nil
 }

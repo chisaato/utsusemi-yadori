@@ -3,10 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,6 +89,17 @@ func TestWebLifecycle(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("probe status: %d", resp.StatusCode)
+	}
+
+	// 内嵌前端静态伺服：GET / 不需要 token 且返回 index.html
+	resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+	if err != nil {
+		t.Fatalf("static probe: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "utsusemi") {
+		t.Fatalf("static index: %d %q", resp.StatusCode, string(body)[:min(120, len(body))])
 	}
 
 	// 停止

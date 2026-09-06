@@ -18,6 +18,7 @@ import (
 
 	"utsusemi/ctl/internal/core"
 	"utsusemi/ctl/internal/web"
+	"utsusemi/ctl/webui"
 )
 
 func newWebCmd() *cobra.Command {
@@ -211,7 +212,7 @@ func webServeCmd() *cobra.Command {
 				os.Remove(p.WebPortFile())
 			}()
 
-			srv := web.NewServer(opsFor(p), web.NewTaskManager(), token, nil /* static 由 embed 接线 */)
+			srv := web.NewServer(opsFor(p), web.NewTaskManager(), token, webui.FS())
 			stopped := make(chan struct{})
 			srv.OnStop = func() { close(stopped) }
 			httpS := &http.Server{Handler: srv.Handler()}

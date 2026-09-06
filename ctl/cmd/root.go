@@ -32,7 +32,7 @@ func NewRoot() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&dataRoot, "data-root", core.DefaultRoot, "数据根目录")
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "以 JSON 信封输出")
-	root.AddCommand(newVersionCmd())
+	root.AddCommand(newVersionCmd(), newBinCmd(), newServerCmd(), newGadgetCmd(), newStatusCmd())
 	return root
 }
 
@@ -64,7 +64,7 @@ func emit(c *cobra.Command, env Envelope) {
 }
 
 // errSilent 让 cobra 静默退出而不重复打印错误（错误已由 emit 输出）
-var errSilent = errors.New("")
+var errSilent = errors.New("silent")
 
 // Execute 供 main 与测试调用；返回进程退出码
 func Execute(args []string, stdout, stderr io.Writer) int {

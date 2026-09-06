@@ -6,6 +6,9 @@
 #include <vector>
 #include <optional>
 
+// gadget 注入配置所在目录（staging 发布区，app 进程可读）
+constexpr const char *kConfigDir = "/data/local/tmp/utsusemi";
+
 struct child_gating_config {
     bool enabled;
     std::string mode;
@@ -21,6 +24,5 @@ struct target_config{
 };
 
 std::optional<target_config> load_config(std::string const& module_dir, std::string const& app_name);
-std::optional<target_config> parse_advanced_config(std::string const& config, std::string const& app_name);
 
 #endif  // ZYGISKFRIDA_CONFIG_H

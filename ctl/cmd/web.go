@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -27,11 +25,9 @@ func newWebCmd() *cobra.Command {
 	return c
 }
 
-// genToken 生成 16 hex 随机 token
+// genToken 生成 32 字节 base64url 强随机 token（43 字符）
 func genToken() string {
-	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	return core.GenToken()
 }
 
 func readWebPid(p core.Paths) int {

@@ -90,7 +90,13 @@ const db = {
   web: { running: true, enabled: true, port: 23333, token: 'm0cktok42' },
   tasks: new Map<string, MockTask>(),
   taskSeq: 0,
+  /** 当前进行中的任务（ksu tasks/current 哨兵语义） */
+  currentTaskId: null as string | null,
 }
+
+/* frida-server 约 25MB / 导入上传约 8MB 的演示量级 */
+const MOCK_TOTAL = 25_480_000
+const MOCK_UPLOAD = 8_200_000
 
 /* ------------------------------------------------------------------ */
 /* 视图构造                                                            */
@@ -148,7 +154,16 @@ function isFailVersion(version: string): boolean {
 function createTask(kind: MockTask['kind'], variant: string, version: string, type: string): string {
   const id = `t${Date.now().toString(36)}${++db.taskSeq}`
   db.tasks.set(id, { id, created: Date.now(), kind, variant, version, type, fail: isFailVersion(version), done: false })
+  db.currentTaskId = id
   return id
+}
+
+/** 43 字符 base64url 风格伪随机 token（模拟 core.GenToken） */
+function genMockToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+  let s = ''
+  for (let i = 0; i < 43; i++) s += chars[Math.floor(Math.random() * chars.length)]
+  return s
 }
 
 /** 按经过时间推进 phase：resolve → download → decompress → install → done/error */
@@ -162,6 +177,8 @@ function taskView(id: string): Task {
   let phase = 'download'
   let detail = label
   let error = ''
+  let bytesDone = 0
+  let bytesTotal = 0 // <=0 表示未知
 
   if (t.kind === 'download') {
     if (t.fail && el > 1.2) {
@@ -171,36 +188,48 @@ function taskView(id: string): Task {
       phase = 'resolve'
       detail = `解析版本 ${label}`
     } else if (el < 2.8) {
+      // 伪 % 逻辑换算为字节：0.8s–2.8s 线性推进至 ~25MB
+      const ratio = Math.min(1, (el - 0.8) / 1.6)
       phase = 'download'
-      detail = `${label} · ${Math.min(96, Math.round((el - 0.8) * 40))}%`
+      detail = label
+      bytesTotal = MOCK_TOTAL
+      bytesDone = Math.floor(MOCK_TOTAL * ratio)
     } else if (el < 3.8) {
       phase = 'decompress'
       detail = `${label} · 解压中`
+      // 解压无字节进度 → total 0 = 未知 → 前端 indeterminate
     } else if (el < 5) {
       phase = 'install'
       detail = `${label} · 安装到 manifest`
     } else {
       state = 'done'
       detail = label
+      bytesDone = MOCK_TOTAL
+      bytesTotal = MOCK_TOTAL
     }
   } else {
-    // import：上传 → 安装
+    // import：上传（带字节进度）→ 安装
     if (el < 1.5) {
       phase = 'download'
-      detail = `上传中 ${t.variant} ${t.version}`
+      detail = `上传中 ${t.variant}`
+      bytesTotal = MOCK_UPLOAD
+      bytesDone = Math.floor(MOCK_UPLOAD * Math.min(1, el / 1.2))
     } else if (el < 3) {
       phase = 'install'
       detail = `安装 ${t.variant} ${t.version}`
     } else {
       state = 'done'
       detail = label
+      bytesDone = MOCK_UPLOAD
+      bytesTotal = MOCK_UPLOAD
     }
   }
 
-  // done 时一次性写入列表（模拟安装副作用）
+  // done 时一次性写入列表并清掉哨兵（模拟安装副作用）
   if (state === 'done' && !t.done) {
     t.done = true
     newBinary(t.variant, t.version, t.type)
+    if (db.currentTaskId === id) db.currentTaskId = null
   }
 
   return {
@@ -208,6 +237,8 @@ function taskView(id: string): Task {
     state,
     phase,
     detail,
+    bytes_done: bytesDone,
+    bytes_total: bytesTotal,
     error,
     created_at: new Date(t.created).toISOString(),
     updated_at: new Date().toISOString(),
@@ -324,8 +355,12 @@ export async function mockRequest<T>(rest: RestSpec | null, ctl: CtlSpec | null)
         throw new Error(`下载失败：HTTP 404 Not Found（${variant} ${version}）`)
       }
       if (key.startsWith('bin/')) {
-        // ksu 同步模式：等待后直接返回 Binary
+        // ksu 同步模式：期间建哨兵任务供 tasks/current 轮询字节进度，结束后返回 Binary
+        const id = createTask('download', variant, version, type)
         await sleep(2200)
+        const t = db.tasks.get(id)
+        if (t) t.done = true
+        db.currentTaskId = null
         return newBinary(variant, version, type) as T
       }
       return { task_id: createTask('download', variant, version, type) } as T
@@ -345,7 +380,17 @@ export async function mockRequest<T>(rest: RestSpec | null, ctl: CtlSpec | null)
     }
     default: {
       /* 形态带参数的端点单独匹配 */
-      if (key.startsWith('tasks/')) return taskView(key.slice(6)) as T
+      if (key.startsWith('tasks/')) {
+        // ksu tasks/current：读哨兵，无进行中任务时 ok:false（契约 §4.6）
+        if (key === 'tasks/current') {
+          if (!db.currentTaskId) throw new Error('no current task')
+          return taskView(db.currentTaskId) as T
+        }
+        return taskView(key.slice(6)) as T
+      }
+      // REST 任务进度：GET /api/tasks/:id
+      const taskRest = key.match(/^GET \/api\/tasks\/(.+)$/)
+      if (taskRest) return taskView(decodeURIComponent(taskRest[1])) as T
       const del = key.match(/^DELETE \/api\/bin\/(.+)$/)
       if (del && rest) {
         const file = decodeURIComponent(del[1])
@@ -365,6 +410,24 @@ export async function mockRequest<T>(rest: RestSpec | null, ctl: CtlSpec | null)
       if (key === 'POST /api/web/stop') {
         db.web.running = false
         return { stopping: true } as T
+      }
+      if (key === 'web/token' || key === 'PUT /api/web/token') {
+        // 契约 §4.8：generate 或自定义 token；空/{} payload = 读取当前
+        const payload = (ctl?.payload ?? rest?.body ?? {}) as { token?: string; generate?: boolean }
+        let target = db.web.token
+        if (payload.generate) {
+          target = genMockToken()
+        } else if (typeof payload.token === 'string' && payload.token.trim() !== '') {
+          const trimmed = payload.token.trim()
+          // 与后端 validateToken 同规则：trim 后 8–128 位、ASCII 可打印（0x21–0x7E）无空白
+          if (trimmed.length < 8 || trimmed.length > 128 || !/^[\x21-\x7E]+$/.test(trimmed)) {
+            throw new Error('token 校验失败：长度需 8–128 字符，仅限 ASCII 可打印字符且不含空白')
+          }
+          target = trimmed
+        }
+        db.web.token = target
+        // restart_required = web 服务正在运行（webAlive）
+        return { token: target, restart_required: db.web.running } as T
       }
       throw new Error('mock 未实现的调用：' + key)
     }

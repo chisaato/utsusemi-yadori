@@ -13,7 +13,7 @@ func TestLoadSettingsMissingReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !s.Server.Autostart || s.Server.Active != "" || s.Download.GithubAPI != "https://api.github.com" {
+	if s.Server.Autostart || s.Server.Active != "" || s.Download.GithubAPI != "https://api.github.com" {
 		t.Fatalf("unexpected defaults: %+v", s)
 	}
 }

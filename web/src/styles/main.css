@@ -299,6 +299,29 @@ a {
   box-shadow: 0 0 6px var(--ux-accent);
 }
 
+/* 顶栏标题右侧小尺寸变体：可发现但不抢视觉焦点 */
+.transport-chip.sm {
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  flex-shrink: 0;
+}
+
+.transport-chip.sm::before {
+  width: 5px;
+  height: 5px;
+  box-shadow: none;
+}
+
+/* 移动端顶栏左组：品牌 + 传输徽标 */
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 /* ---------------- 页面元素 ---------------- */
 
 .page-head {

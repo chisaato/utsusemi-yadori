@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -73,10 +74,22 @@ type Client struct {
 }
 
 func NewClient(d core.DownloadSettings) *Client {
+	// 大文件读取不设整体 Timeout，避免慢速网络 30s 掐断
+	// 在 Android CGO 环境下，net.Dialer 默认使用 cgo (getaddrinfo)，可直接解析系统 DNS
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
 	return &Client{
 		API:    d.GithubAPI,
 		Mirror: d.Mirror,
-		HTTP:   &http.Client{Timeout: 30 * time.Second},
+		HTTP: &http.Client{
+			Transport: transport,
+		},
 	}
 }
 

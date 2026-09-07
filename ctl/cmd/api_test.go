@@ -125,3 +125,73 @@ func TestAPIBinListLogsWebInfo(t *testing.T) {
 		t.Fatalf("web/info data: %v", wi)
 	}
 }
+
+func TestAPITasksCurrent(t *testing.T) {
+	root := t.TempDir()
+	with := func(args ...string) []string { return append([]string{"--data-root", root}, args...) }
+
+	// 哨兵文件不存在：ok: false
+	env := runJSON(t, with("api", "tasks/current")...)
+	if env.OK {
+		t.Fatalf("expected ok:false when no current task, got %+v", env)
+	}
+}
+
+func TestAPIWebToken(t *testing.T) {
+	root := t.TempDir()
+	with := func(args ...string) []string { return append([]string{"--data-root", root}, args...) }
+
+	// 1. 无 payload 读取当前 token
+	env := runJSON(t, with("api", "web/token")...)
+	if !env.OK {
+		t.Fatalf("web/token read failed: %s", env.Error)
+	}
+	raw, _ := json.Marshal(env.Data)
+	var res struct {
+		Token           string `json:"token"`
+		RestartRequired bool   `json:"restart_required"`
+	}
+	json.Unmarshal(raw, &res)
+
+	// 2. generate 生成新 token
+	envGen := runJSON(t, with("api", "web/token", "--payload", `{"generate":true}`)...)
+	if !envGen.OK {
+		t.Fatalf("web/token generate failed: %s", envGen.Error)
+	}
+	var resGen struct {
+		Token           string `json:"token"`
+		RestartRequired bool   `json:"restart_required"`
+	}
+	rawGen, _ := json.Marshal(envGen.Data)
+	json.Unmarshal(rawGen, &resGen)
+	if len(resGen.Token) != 43 {
+		t.Fatalf("expected 43-char base64url token, got %q (len %d)", resGen.Token, len(resGen.Token))
+	}
+
+	// 3. 自定义 token
+	envCustom := runJSON(t, with("api", "web/token", "--payload", `{"token":"custom-token-123456"}`)...)
+	if !envCustom.OK {
+		t.Fatalf("web/token custom failed: %s", envCustom.Error)
+	}
+	var resCustom struct {
+		Token           string `json:"token"`
+		RestartRequired bool   `json:"restart_required"`
+	}
+	rawCustom, _ := json.Marshal(envCustom.Data)
+	json.Unmarshal(rawCustom, &resCustom)
+	if resCustom.Token != "custom-token-123456" {
+		t.Fatalf("expected custom-token-123456, got %s", resCustom.Token)
+	}
+
+	// 4. 非法 token 校验拒绝：过短
+	envShort := runJSON(t, with("api", "web/token", "--payload", `{"token":"short"}`)...)
+	if envShort.OK {
+		t.Fatal("expected rejection for short token")
+	}
+
+	// 5. 非法 token 校验拒绝：含空白
+	envSpace := runJSON(t, with("api", "web/token", "--payload", `{"token":"token with space"}`)...)
+	if envSpace.OK {
+		t.Fatal("expected rejection for token with space")
+	}
+}

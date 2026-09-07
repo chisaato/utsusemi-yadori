@@ -120,7 +120,7 @@ func TestInstallFullFlow(t *testing.T) {
 	s.Download = core.DownloadSettings{GithubAPI: srv.URL, Mirror: srv.URL + "/dl/"}
 
 	m := core.Manifest{}
-	b, err := Install(context.Background(), p, s, &m, "official", a)
+	b, err := Install(context.Background(), p, s, &m, "official", a, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestInstallRejectsArchMismatch(t *testing.T) {
 	s := core.DefaultSettings()
 	s.Download = core.DownloadSettings{GithubAPI: srv.URL, Mirror: srv.URL + "/dl/"}
 	m := core.Manifest{}
-	if _, err := Install(context.Background(), p, s, &m, "florida", a); err == nil {
+	if _, err := Install(context.Background(), p, s, &m, "florida", a, nil); err == nil {
 		t.Fatal("arch mismatch accepted")
 	}
 }

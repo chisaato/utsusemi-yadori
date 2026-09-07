@@ -4,8 +4,8 @@ import { RouterLink } from 'vue-router'
 import {
   NAlert,
   NButton,
-  NDynamicTags,
   NIcon,
+  NInput,
   NPopconfirm,
   NSelect,
   NSpin,
@@ -97,11 +97,80 @@ async function act(kind: Exclude<Busy, null | 'save'>) {
 const showSettings = ref(false)
 const editing = ref<ServerSettings | null>(null)
 
+// 针对 args 的结构化辅助：解析与反向序列化
+// 常见参数：-l / --listen (地址), -D / --daemonize
+const listenAddress = ref('127.0.0.1:27042')
+const daemonize = ref(false)
+const extraArgs = ref('')
+
+function splitShellArgs(str: string): string[] {
+  const args: string[] = []
+  const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/g
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(str)) !== null) {
+    if (match[1] !== undefined) {
+      args.push(match[1])
+    } else if (match[2] !== undefined) {
+      args.push(match[2])
+    } else {
+      args.push(match[0])
+    }
+  }
+  return args
+}
+
+function syncArgsFromEditing() {
+  if (!editing.value) return
+  const raw = editing.value.args || []
+  let addr = '127.0.0.1:27042'
+  let daemon = false
+  const remaining: string[] = []
+
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i]
+    if (item === '-l' || item === '--listen') {
+      if (i + 1 < raw.length) {
+        addr = raw[i + 1]
+        i++
+      }
+    } else if (item.startsWith('-l=')) {
+      addr = item.slice(3)
+    } else if (item.startsWith('--listen=')) {
+      addr = item.slice(9)
+    } else if (item === '-D' || item === '--daemonize') {
+      daemon = true
+    } else {
+      remaining.push(item.includes(' ') ? `"${item}"` : item)
+    }
+  }
+  listenAddress.value = addr
+  daemonize.value = daemon
+  extraArgs.value = remaining.join(' ')
+}
+
+function syncArgsToEditing() {
+  if (!editing.value) return
+  const result: string[] = []
+  if (listenAddress.value.trim()) {
+    result.push('-l', listenAddress.value.trim())
+  }
+  if (daemonize.value) {
+    result.push('-D')
+  }
+  if (extraArgs.value.trim()) {
+    result.push(...splitShellArgs(extraArgs.value.trim()))
+  }
+  editing.value.args = result
+}
+
 watch(
   () => status.value,
   (s) => {
     // 首次载入后建立可编辑副本；此后刷新不覆盖用户编辑中的表单
-    if (s && !editing.value) editing.value = JSON.parse(JSON.stringify(s.settings.server))
+    if (s && !editing.value) {
+      editing.value = JSON.parse(JSON.stringify(s.settings.server))
+      syncArgsFromEditing()
+    }
   },
   { immediate: true },
 )
@@ -121,11 +190,15 @@ const serverOptions = computed(() =>
 )
 
 function resetEditing() {
-  if (status.value) editing.value = JSON.parse(JSON.stringify(status.value.settings.server))
+  if (status.value) {
+    editing.value = JSON.parse(JSON.stringify(status.value.settings.server))
+    syncArgsFromEditing()
+  }
 }
 
 async function saveSettings() {
   if (!editing.value || !dirty.value || busy.value) return
+  syncArgsToEditing()
   busy.value = 'save'
   try {
     await serverSet(editing.value)
@@ -321,9 +394,31 @@ async function saveSettings() {
             <span class="form-label">激活 server 二进制</span>
             <NSelect v-model:value="editing.active" :options="serverOptions" size="small" />
           </div>
+          <div class="form-item">
+            <span class="form-label">监听地址与端口 (-l)</span>
+            <NInput
+              v-model:value="listenAddress"
+              size="small"
+              placeholder="127.0.0.1:27042"
+              @update:value="syncArgsToEditing"
+            />
+          </div>
+          <div class="form-item">
+            <span class="form-label">守护进程模式 (-D)</span>
+            <NSwitch
+              v-model:value="daemonize"
+              size="small"
+              @update:value="syncArgsToEditing"
+            />
+          </div>
           <div class="form-item" style="grid-column: 1 / -1">
-            <span class="form-label">启动参数（每个标签一个 arg）</span>
-            <NDynamicTags v-model:value="editing.args" size="small" />
+            <span class="form-label">其他命令行启动参数 (空格分隔，支持引号)</span>
+            <NInput
+              v-model:value="extraArgs"
+              size="small"
+              placeholder="例如：--verbose"
+              @update:value="syncArgsToEditing"
+            />
           </div>
           <div class="action-row" style="grid-column: 1 / -1">
             <NButton

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 )
@@ -8,6 +10,29 @@ import (
 const DefaultRoot = "/data/adb/utsusemi"
 const ModuleID = "utsusemi"
 const DefaultStage = "/data/local/tmp/" + ModuleID
+
+// DefaultDataDir 返回数据根目录，优先 UTSUSEMI_DATA_DIR 环境变量
+func DefaultDataDir() string {
+	if v := os.Getenv("UTSUSEMI_DATA_DIR"); v != "" {
+		return v
+	}
+	return DefaultRoot
+}
+
+// DefaultStageDir 返回发布区目录，优先 UTSUSEMI_STAGE_DIR 环境变量
+func DefaultStageDir() string {
+	if v := os.Getenv("UTSUSEMI_STAGE_DIR"); v != "" {
+		return v
+	}
+	return DefaultStage
+}
+
+// GenToken 生成 32 字节 base64url 强随机 token（43 字符）
+func GenToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
 
 // Paths 汇聚所有数据落点。
 // Root: 控制区（root 才能读写）；Stage: 发布区（app 进程可读，zygisk 从此加载 gadget）。
@@ -17,9 +42,9 @@ type Paths struct {
 	Stage string
 }
 
-func New(root string) Paths         { return Paths{Root: root, Stage: DefaultStage} }
+func New(root string) Paths         { return Paths{Root: root, Stage: DefaultStageDir()} }
 func NewStage(root, stage string) Paths { return Paths{Root: root, Stage: stage} }
-func Default() Paths                { return New(DefaultRoot) }
+func Default() Paths                { return NewStage(DefaultDataDir(), DefaultStageDir()) }
 
 func (p Paths) Ensure() error {
 	for _, d := range []string{p.Root, p.ServerDir(), p.GadgetDir(), p.Logs()} {
@@ -47,6 +72,9 @@ func (p Paths) WebLog() string    { return filepath.Join(p.Logs(), "web.log") }
 // Web 进程（Gin 远程服务）运行态文件
 func (p Paths) WebPidFile() string  { return filepath.Join(p.Root, "web.pid") }
 func (p Paths) WebPortFile() string { return filepath.Join(p.Root, "web.port") }
+
+// DownloadTaskFile 哨兵文件路径（ksu 模式单一任务进度）
+func (p Paths) DownloadTaskFile() string { return filepath.Join(p.Root, "download-task.json") }
 
 // GadgetConfig 位于发布区：zygisk so 运行在 app 进程，读不到 /data/adb
 func (p Paths) GadgetConfig() string { return filepath.Join(p.Stage, "gadget.json") }

@@ -26,7 +26,7 @@ import {
   WarningOutline,
 } from '@vicons/ionicons5'
 import PageHead from '../components/PageHead.vue'
-import { binCleanup, binDownload, binImportRest, binList, binRemove, binSources, binUse, getTask } from '../api'
+import { binCleanup, binDownload, binImportRest, binList, binRemove, binSources, binUse, getTask, getTaskCurrent } from '../api'
 import type { Binary, BinSource, Task } from '../api/types'
 import { mode } from '../api/client'
 import { useStatusStore } from '../composables/useStatusStore'
@@ -136,6 +136,7 @@ async function cleanup() {
 const task = ref<Task | null>(null)
 const steps = ref<string[]>([])
 let pollTimer = 0 as unknown as ReturnType<typeof setInterval>
+let ksuPoller = 0 as unknown as ReturnType<typeof setInterval>
 
 const PHASE_TEXT: Record<string, string> = {
   resolve: '解析版本',
@@ -149,14 +150,25 @@ function stopPolling() {
   pollTimer = 0 as unknown as ReturnType<typeof setInterval>
 }
 
+function stopKsuPoller() {
+  clearInterval(ksuPoller)
+  ksuPoller = 0 as unknown as ReturnType<typeof setInterval>
+}
+
+/** running 中出现的 phase 依观测顺序追加为步骤药丸（phase 为 omitempty 需容错） */
+function trackPhase(t: Task) {
+  const p = t.phase ?? ''
+  if (t.state === 'running' && p && !steps.value.includes(p)) steps.value.push(p)
+}
+
 async function pollOnce(id: string) {
   try {
     const t = await getTask(id)
     task.value = t
-    if (t.state === 'running' && !steps.value.includes(t.phase)) steps.value.push(t.phase)
+    trackPhase(t)
     if (t.state === 'done') {
       stopPolling()
-      message.success(`安装完成：${t.detail}`)
+      message.success(`安装完成：${t.detail ?? ''}`)
       task.value = null
       await reloadList()
     } else if (t.state === 'error') {
@@ -177,7 +189,47 @@ function startPolling(id: string) {
   pollTimer = setInterval(() => pollOnce(id), 900)
 }
 
-onScopeDispose(stopPolling)
+/** ksu 模式：阻塞下载期间并发轮询哨兵文件 tasks/current 获取字节进度 */
+async function pollCurrent() {
+  try {
+    const t = await getTaskCurrent()
+    task.value = t
+    trackPhase(t)
+  } catch {
+    // 哨兵不存在（暂无任务）→ 静默，等阻塞调用返回
+  }
+}
+
+onScopeDispose(() => {
+  stopPolling()
+  stopKsuPoller()
+})
+
+/* ---------------- 数值进度（bytes_done / bytes_total） ---------------- */
+
+const progress = computed(() => {
+  const t = task.value
+  if (!t || t.state !== 'running') return null
+  // resolve 阶段尚无字节语义，不渲染进度条
+  if ((t.phase ?? '') === 'resolve') return null
+  const total = t.bytes_total ?? 0
+  const done = t.bytes_done ?? 0
+  // bytes_total <= 0 = 未知总大小 → indeterminate
+  const pct = total > 0 ? Math.min(1, done / total) : null
+  return { pct, done, total }
+})
+
+const progressText = computed(() => {
+  const t = task.value
+  if (!t) return ''
+  if (t.state === 'error') return t.error ?? '任务失败'
+  const p = progress.value
+  if (!p) return t.detail ?? ''
+  // 已下载 / 总大小（未知则只报已下载）+ 百分比
+  const bytes = p.total > 0 ? `${humanBytes(p.done)} / ${humanBytes(p.total)}` : `${humanBytes(p.done)}`
+  const pct = p.pct !== null ? ` · ${Math.floor(p.pct * 100)}%` : ''
+  return `${t.detail ?? ''} — ${bytes}${pct}`
+})
 
 /* ---------------- 下载 ---------------- */
 
@@ -201,18 +253,28 @@ async function startDownload() {
   if (!dlVersion.value || downloading.value || task.value) return
   downloading.value = true
   task.value = null
+  steps.value = []
+  // ksu：阻塞下载期间并发轮询哨兵任务，实时展示字节进度
+  if (isKsu) ksuPoller = setInterval(() => void pollCurrent(), 900)
   try {
     const res = await binDownload({ variant: dlVariant.value, type: dlType.value, version: dlVersion.value })
     if ('task_id' in res) {
+      // REST：接管为按 id 轮询
       startPolling(res.task_id)
     } else {
-      // ksu 同步模式直接拿到 Binary
+      // ksu 同步模式：阻塞返回即完成，清掉哨兵进度卡
+      stopKsuPoller()
       message.success(`下载完成：${res.file}`)
+      task.value = null
       await reloadList()
     }
   } catch (e) {
+    stopKsuPoller()
     message.error(errMsg(e))
+    // ksu 模式错误往往伴随哨兵残留状态，清空展示
+    task.value = null
   } finally {
+    stopKsuPoller()
     downloading.value = false
   }
 }
@@ -376,7 +438,17 @@ async function copy(label: string, text: string) {
         </span>
         <span v-if="task.state === 'running'" class="phase-pill pending">…</span>
       </div>
-      <p class="mono task-detail">{{ task.state === 'error' ? task.error : task.detail }}</p>
+
+      <!-- 数值进度条：download 显百分比/字节，total 未知或解压/安装阶段为 indeterminate -->
+      <div v-if="progress" class="pbar">
+        <div
+          class="pbar-fill"
+          :class="{ indet: progress.pct === null }"
+          :style="progress.pct !== null ? { width: (progress.pct * 100).toFixed(1) + '%' } : {}"
+        />
+      </div>
+
+      <p class="mono task-detail">{{ progressText }}</p>
       <NAlert v-if="task.state === 'error'" type="error" :bordered="false">{{ task.error }}</NAlert>
     </section>
 
@@ -608,5 +680,41 @@ async function copy(label: string, text: string) {
   margin: 0 0 4px;
   font-size: 12px;
   color: var(--ux-text-dim);
+}
+
+/* 数值进度条：download 为确定宽度，解压/安装或 total 未知时 indeterminate 滑动 */
+.pbar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ux-accent-soft);
+  overflow: hidden;
+  margin: 2px 0 10px;
+}
+
+.pbar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--ux-accent), #63efe0);
+  transition: width 0.35s ease;
+}
+
+.pbar-fill.indet {
+  width: 34% !important;
+  animation: pbarSlide 1.15s ease-in-out infinite;
+}
+
+@keyframes pbarSlide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pbar-fill.indet {
+    animation: none;
+  }
 }
 </style>

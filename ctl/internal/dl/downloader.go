@@ -18,8 +18,8 @@ import (
 	"utsusemi/ctl/internal/core"
 )
 
-// Fetch 流式下载到 w，返回 sha256
-func Fetch(ctx context.Context, c *Client, url string, w io.Writer) (string, error) {
+// Fetch 流式下载到 w，返回 sha256；onBytes 上报 (done, total)
+func Fetch(ctx context.Context, c *Client, url string, w io.Writer, expectedTotal int64, onBytes func(done, total int64)) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -33,9 +33,47 @@ func Fetch(ctx context.Context, c *Client, url string, w io.Writer) (string, err
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download %s: %s", url, resp.Status)
 	}
+
+	// 进度计算：优先 resp.ContentLength，<=0 时用传入的 Asset.Size 兜底
+	total := resp.ContentLength
+	if total <= 0 {
+		total = expectedTotal
+	}
+
 	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(w, h), resp.Body); err != nil {
-		return "", err
+	mw := io.MultiWriter(w, h)
+	buf := make([]byte, 32*1024)
+	var done int64
+	if onBytes != nil {
+		onBytes(0, total)
+	}
+	for {
+		nr, rerr := resp.Body.Read(buf)
+		if nr > 0 {
+			nw, werr := mw.Write(buf[0:nr])
+			if nw < 0 || nr < nw {
+				nw = 0
+				if werr == nil {
+					werr = fmt.Errorf("invalid write result")
+				}
+			}
+			done += int64(nw)
+			if onBytes != nil {
+				onBytes(done, total)
+			}
+			if werr != nil {
+				return "", werr
+			}
+			if nr != nw {
+				return "", io.ErrShortWrite
+			}
+		}
+		if rerr != nil {
+			if rerr == io.EOF {
+				break
+			}
+			return "", rerr
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -78,7 +116,7 @@ func Decompress(path, ext string) (string, error) {
 }
 
 // Install 下载→解压→终验→登记；覆盖同名（视为重下载）
-func Install(ctx context.Context, p core.Paths, s core.Settings, m *core.Manifest, variant string, a Asset) (core.Binary, error) {
+func Install(ctx context.Context, p core.Paths, s core.Settings, m *core.Manifest, variant string, a Asset, onBytes func(done, total int64)) (core.Binary, error) {
 	dir := p.ServerDir()
 	name := fmt.Sprintf("%s_%s_%s", variant, a.Version, a.Arch)
 	wantType := "exec"
@@ -107,7 +145,7 @@ func Install(ctx context.Context, p core.Paths, s core.Settings, m *core.Manifes
 		return core.Binary{}, err
 	}
 	cl := NewClient(s.Download)
-	sum, err := Fetch(ctx, cl, cl.DownloadURL(a), tf)
+	sum, err := Fetch(ctx, cl, cl.DownloadURL(a), tf, a.Size, onBytes)
 	tf.Close()
 	if err != nil {
 		os.Remove(tmp)
@@ -125,8 +163,11 @@ func Install(ctx context.Context, p core.Paths, s core.Settings, m *core.Manifes
 	}
 
 	// 终验：ELF 头必须与声称的 arch/type 一致，不一致则清理报错
+	// 注意：Android PIE 构建的 server 本身也是 dyn，允许 exec 或 dyn
 	info, err := core.InspectFile(final)
-	if err != nil || info.Arch != a.Arch || info.Type != wantType {
+	validType := (a.BinType == "gadget" && info.Type == "dyn") ||
+		(a.BinType == "server" && (info.Type == "exec" || info.Type == "dyn"))
+	if err != nil || info.Arch != a.Arch || !validType {
 		os.Remove(final)
 		return core.Binary{}, fmt.Errorf("post-download verify failed: %+v err=%v (want %s/%s)", info, err, a.Arch, wantType)
 	}

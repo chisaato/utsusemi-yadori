@@ -81,6 +81,12 @@ func (m *mockOps) Logs(name string, tail int) (any, error) {
 func (m *mockOps) WebInfo() (any, error) {
 	return map[string]any{"running": true, "port": 23333, "token": "tok"}, nil
 }
+func (m *mockOps) WebToken(p []byte) (any, error) {
+	return map[string]any{"token": "newtok", "restart_required": false}, nil
+}
+func (m *mockOps) TaskCurrent() (any, error) {
+	return Task{ID: "ksu", State: "running", Phase: "download"}, nil
+}
 
 func newTestServer(t *testing.T) (*mockOps, *httptest.Server) {
 	t.Helper()
@@ -254,6 +260,17 @@ func TestEndpointsMatrix(t *testing.T) {
 	// web/info
 	if env := get("/web/info?"); env["ok"] != true {
 		t.Fatalf("web/info: %v", env)
+	}
+
+	// PUT /web/token
+	reqToken, _ := http.NewRequest("PUT", q+"/web/token?token=tok", strings.NewReader(`{"generate":true}`))
+	reqToken.Header.Set("Content-Type", "application/json")
+	respToken, errToken := http.DefaultClient.Do(reqToken)
+	if errToken != nil {
+		t.Fatal(errToken)
+	}
+	if env := decode(t, respToken); env["ok"] != true {
+		t.Fatalf("PUT /web/token: %v", env)
 	}
 
 	// web/stop：200 信封 + 触发 OnStop + 响应头标记（供 serve 循环识别）

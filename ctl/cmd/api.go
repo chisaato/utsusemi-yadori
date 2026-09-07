@@ -24,6 +24,8 @@ func newAPICmd() *cobra.Command {
 		apiSimpleCmd("bin/list", func(o web.Ops) (any, error) { return o.BinList() }),
 		apiSimpleCmd("bin/sources", func(o web.Ops) (any, error) { return o.BinSources() }),
 		apiSimpleCmd("web/info", func(o web.Ops) (any, error) { return o.WebInfo() }),
+		apiPayloadCmd("web/token", func(o web.Ops, payload []byte) (any, error) { return o.WebToken(payload) }),
+		apiSimpleCmd("tasks/current", func(o web.Ops) (any, error) { return o.TaskCurrent() }),
 		apiBinDownloadCmd(), apiBinImportCmd(), apiBinRemoveCmd(), apiBinUseCmd(),
 		apiSimpleCmd("bin/cleanup", func(o web.Ops) (any, error) { return o.BinCleanup() }),
 		apiLogsCmd(),

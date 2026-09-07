@@ -22,6 +22,7 @@ var (
 	dataRoot string
 	stageDir string
 	asJSON   bool
+	Version  = "0.3.0"
 )
 
 func NewRoot() *cobra.Command {
@@ -31,8 +32,9 @@ func NewRoot() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
-	root.PersistentFlags().StringVar(&dataRoot, "data-root", core.DefaultRoot, "数据根目录")
-	root.PersistentFlags().StringVar(&stageDir, "stage", core.DefaultStage, "发布区目录（app 进程可读）")
+	// 支持 UTSUSEMI_DATA_DIR / UTSUSEMI_STAGE_DIR 环境变量作为默认值
+	root.PersistentFlags().StringVar(&dataRoot, "data-root", core.DefaultDataDir(), "数据根目录")
+	root.PersistentFlags().StringVar(&stageDir, "stage", core.DefaultStageDir(), "发布区目录（app 进程可读）")
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "以 JSON 信封输出")
 	root.AddCommand(newVersionCmd(), newBinCmd(), newServerCmd(), newGadgetCmd(), newStatusCmd(), newBootCmd(), newAPICmd(), newWebCmd())
 	return root
@@ -42,7 +44,7 @@ func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "version",
 		RunE: func(c *cobra.Command, args []string) error {
-			emit(c, Envelope{OK: true, Data: map[string]string{"version": "0.1.0"}})
+			emit(c, Envelope{OK: true, Data: map[string]string{"version": Version}})
 			return nil
 		},
 	}

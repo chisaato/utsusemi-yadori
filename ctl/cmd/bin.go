@@ -92,7 +92,7 @@ func binDownloadCmd() *cobra.Command {
 			if err != nil {
 				return fail(c, err)
 			}
-			b, err := dl.Install(c.Context(), m.P, m.S, m.M, variant, a)
+			b, err := dl.Install(c.Context(), m.P, m.S, m.M, variant, a, nil)
 			if err != nil {
 				return fail(c, err)
 			}

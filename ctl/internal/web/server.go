@@ -158,6 +158,14 @@ func (s *Server) routes(api *gin.RouterGroup) {
 		call(c, func() (any, error) { return s.Ops.Logs(name, tail) })
 	})
 	api.GET("/web/info", func(c *gin.Context) { call(c, s.Ops.WebInfo) })
+	api.PUT("/web/token", func(c *gin.Context) {
+		payload, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			ok(c, nil, err)
+			return
+		}
+		call(c, func() (any, error) { return s.Ops.WebToken(payload) })
+	})
 	api.POST("/web/stop", func(c *gin.Context) {
 		c.Header("X-Utsusemi-Stop", "1")
 		ok(c, map[string]bool{"stopping": true}, nil)

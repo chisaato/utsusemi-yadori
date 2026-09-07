@@ -9,13 +9,15 @@ import (
 
 // Task 是异步操作（下载/导入）的状态快照
 type Task struct {
-	ID        string    `json:"id"`
-	State     string    `json:"state"`           // running | done | error
-	Phase     string    `json:"phase,omitempty"` // download | decompress | install
-	Detail    string    `json:"detail,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	State      string    `json:"state"`           // running | done | error
+	Phase      string    `json:"phase,omitempty"` // resolve | download | decompress | install
+	Detail     string    `json:"detail,omitempty"`
+	BytesDone  int64     `json:"bytes_done"`
+	BytesTotal int64     `json:"bytes_total"`
+	Error      string    `json:"error,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type TaskManager struct {
@@ -35,6 +37,25 @@ func newID() string {
 
 // NewTaskID 供调用方（cmd/ops.go）预生成任务 id，便于 Start 前后一致
 func NewTaskID() string { return newID() }
+
+// UpdateProgress 更新任务进度（带 bytes），用于节流写入
+func (m *TaskManager) UpdateProgress(id, phase, detail string, done, total int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t := m.tasks[id]
+	if t == nil {
+		return
+	}
+	if phase != "" {
+		t.Phase = phase
+	}
+	if detail != "" {
+		t.Detail = detail
+	}
+	t.BytesDone = done
+	t.BytesTotal = total
+	t.UpdatedAt = time.Now()
+}
 
 // Start 注册并异步执行 fn；upd 更新进度（phase/detail），fn 返回错误即终态 error
 func (m *TaskManager) Start(id string, fn func(upd func(phase, detail string) error) error) {

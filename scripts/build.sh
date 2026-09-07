@@ -2,8 +2,15 @@
 # 一键打包: webui(bun/vite) + ctl(go) + zygisk(ndk/cmake) + template → dist/utsusemi-<version>.zip
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-v0.1.0}"
-VERSION_CODE="${VERSION_CODE:-1}"
+
+# 优先取入参，其次取环境变量，再次从根目录 VERSION 文件读取，默认 v0.3.0
+if [ -f "$ROOT/VERSION" ]; then
+  # shellcheck disable=SC1091
+  source "$ROOT/VERSION"
+fi
+VERSION="${1:-${VERSION:-v0.3.0}}"
+VERSION_CODE="${VERSION_CODE:-3}"
+export VERSION VERSION_CODE
 cd "$ROOT"
 
 # —— webui：构建前端并双写（template/webroot 供 KSU WebUI；ctl/webui/dist 供 go:embed）——

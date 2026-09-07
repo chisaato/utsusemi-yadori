@@ -64,13 +64,20 @@ func TestImportRejectsWrongTypeAndNonELF(t *testing.T) {
 	src := t.TempDir()
 	script := filepath.Join(src, "plain")
 	os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755)
-	dynAsServer := elfFile(t, src, "dyn-file", hostClass, 3, hostMachine)
+	execAsGadget := elfFile(t, src, "exec-file", hostClass, 2, hostMachine) // ET_EXEC
+	dynAsServer := elfFile(t, src, "dyn-file", hostClass, 3, hostMachine)   // ET_DYN
 
 	if _, err := m.Import("server", script, ""); err == nil {
 		t.Fatal("non-elf accepted")
 	}
-	if _, err := m.Import("server", dynAsServer, ""); err == nil {
-		t.Fatal("dyn accepted as server")
+	if _, err := m.Import("gadget", execAsGadget, ""); err == nil {
+		t.Fatal("exec accepted as gadget")
+	}
+	// ET_DYN (PIE executable) should be accepted as server
+	if b, err := m.Import("server", dynAsServer, ""); err != nil {
+		t.Fatalf("dyn rejected as server: %v", err)
+	} else if b.ELFType != "dyn" {
+		t.Fatalf("expected ELFType dyn, got %s", b.ELFType)
 	}
 }
 

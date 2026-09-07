@@ -4,15 +4,23 @@ import {
   NAlert,
   NButton,
   NIcon,
+  NInput,
   NInputNumber,
   NSpin,
   useDialog,
   useMessage,
 } from 'naive-ui'
 import QRCode from 'qrcode'
-import { CopyOutline, PowerOutline, RefreshOutline, ShieldCheckmarkOutline } from '@vicons/ionicons5'
+import {
+  CopyOutline,
+  EyeOffOutline,
+  EyeOutline,
+  PowerOutline,
+  RefreshOutline,
+  ShieldCheckmarkOutline,
+} from '@vicons/ionicons5'
 import PageHead from '../components/PageHead.vue'
-import { webInfo, webStop } from '../api'
+import { setWebToken, webInfo, webStop } from '../api'
 import { execCtlRaw, mode } from '../api/client'
 import type { WebInfo } from '../api/types'
 import { errMsg } from '../utils/format'
@@ -105,6 +113,74 @@ function restStop() {
       }
     },
   })
+}
+
+/* ---------------- 访问令牌管理（契约 §4.8） ---------------- */
+
+// 后端校验：trim 后 8–128 字符、ASCII 可打印（0x21–0x7E）且不含空白 —— 前端同规则镜像
+const TOKEN_RE = /^[\x21-\x7E]{8,128}$/
+
+const showToken = ref(false)
+const tokenInput = ref('')
+const tokenBusy = ref(false)
+/** restart_required=true：新令牌待 web 服务重启生效 */
+const needRestart = ref(false)
+const restarting = ref(false)
+
+const tokenValid = computed(() => TOKEN_RE.test(tokenInput.value.trim()))
+// 与当前令牌相同或未填写时不允许保存
+const canSaveToken = computed(() => tokenValid.value && tokenInput.value.trim() !== '' && tokenInput.value.trim() !== info.value?.token)
+
+/** 打码展示：头 4 + 尾 4，中间以 • 遮盖 */
+function maskToken(t: string): string {
+  if (!t) return '—'
+  if (t.length <= 8) return '•'.repeat(t.length)
+  return t.slice(0, 4) + '•'.repeat(Math.min(16, t.length - 8)) + t.slice(-4)
+}
+
+/** 保存令牌：按传输模式走 request() 双通道（REST PUT /api/web/token | ksu api web/token） */
+async function saveToken(payload: { token?: string; generate?: boolean }) {
+  if (tokenBusy.value) return
+  tokenBusy.value = true
+  try {
+    const res = await setWebToken(payload)
+    message.success('令牌已更新')
+    // 重启前旧令牌继续服务当前会话；新令牌用于重启后的新入口链接
+    needRestart.value = res.restart_required
+    if (res.restart_required) message.warning('新令牌将于 web 服务重启后生效')
+    tokenInput.value = ''
+    await load()
+  } catch (e) {
+    message.error(errMsg(e))
+  } finally {
+    tokenBusy.value = false
+  }
+}
+
+async function saveCustomToken() {
+  if (!canSaveToken.value) return
+  await saveToken({ token: tokenInput.value.trim() })
+}
+
+async function generateToken() {
+  await saveToken({ generate: true })
+}
+
+/** ksu 快捷重启：web stop → web start --port N，让新令牌立即生效 */
+async function restartWeb() {
+  if (restarting.value) return
+  restarting.value = true
+  try {
+    await execCtlRaw('web stop')
+    await execCtlRaw(`web start --port ${info.value?.port ?? portEdit.value}`)
+    message.success('web 服务已重启，新令牌已生效')
+    needRestart.value = false
+    await load()
+  } catch (e) {
+    message.error(errMsg(e))
+  } finally {
+    restarting.value = false
+  }
 }
 
 /* ---------------- 入口二维码 ---------------- */
@@ -225,8 +301,72 @@ async function copy(label: string, text: string) {
         </div>
       </section>
 
+      <!-- 访问令牌管理（契约 §4.8） -->
+      <section class="card reveal" style="--i: 3">
+        <div class="card-head">
+          <span class="sec-label">访问令牌</span>
+          <NButton text size="tiny" @click="showToken = !showToken">
+            <template #icon>
+              <NIcon :size="15"><component :is="showToken ? EyeOffOutline : EyeOutline" /></NIcon>
+            </template>
+            {{ showToken ? '隐藏' : '显示' }}
+          </NButton>
+        </div>
+
+        <div class="kv">
+          <span class="kv-key">当前令牌</span>
+          <span class="kv-val mono" :class="{ masked: !showToken }">
+            {{ showToken ? info.token : maskToken(info.token) }}
+          </span>
+        </div>
+        <div class="action-row" style="margin: 2px 0 10px">
+          <NButton size="tiny" secondary @click="copy('令牌', info.token)">
+            <template #icon><NIcon><CopyOutline /></NIcon></template>
+            复制令牌
+          </NButton>
+        </div>
+
+        <div class="form-item">
+          <span class="form-label">自定义新令牌 · 8–128 位，ASCII 可打印且不含空格</span>
+          <div class="token-row">
+            <NInput
+              v-model:value="tokenInput"
+              class="mono"
+              size="small"
+              placeholder="留空表示不修改"
+              clearable
+              :status="tokenInput && !tokenValid ? 'error' : undefined"
+              @keydown.enter="saveCustomToken"
+            />
+            <NButton size="small" secondary :loading="tokenBusy" @click="generateToken">一键生成</NButton>
+            <NButton size="small" type="primary" :disabled="!canSaveToken" :loading="tokenBusy" @click="saveCustomToken">
+              保存
+            </NButton>
+          </div>
+          <p v-if="tokenInput && !tokenValid" class="field-error">
+            长度需 8–128 字符，仅限 ASCII 可打印字符且不含空白
+          </p>
+        </div>
+
+        <!-- restart_required：提示生效时机 + ksu 快捷重启 -->
+        <NAlert v-if="needRestart" type="warning" :bordered="false" style="margin-top: 10px">
+          <span class="restart-text">
+            新令牌将于 web 服务重启后生效。新令牌用于新的远程入口链接（?token=…）；生效前当前页面会话不受影响。
+          </span>
+          <div v-if="isKsu" class="action-row" style="margin-top: 8px">
+            <NButton size="tiny" type="warning" :loading="restarting" @click="restartWeb">立即重启 web 服务</NButton>
+          </div>
+          <span v-else class="restart-text">请在设备端重启 web 服务后使用新令牌。</span>
+        </NAlert>
+
+        <p class="step-note">
+          说明：修改后的令牌用于拼装新的远程入口链接（<span class="mono">?token=…</span>）；
+          二维码与 adb 指引会在 web 服务重启后自动使用新令牌。
+        </p>
+      </section>
+
       <!-- 入口二维码（仅 http 远程模式可生成有意义的 URL） -->
-      <section class="card reveal qr-card" style="--i: 3">
+      <section class="card reveal qr-card" style="--i: 4">
         <div class="card-head">
           <span class="sec-label">入口二维码</span>
         </div>
@@ -242,7 +382,7 @@ async function copy(label: string, text: string) {
       </section>
 
       <!-- adb forward 指引 -->
-      <section class="card reveal" style="--i: 4">
+      <section class="card reveal" style="--i: 5">
         <div class="card-head">
           <span class="sec-label">adb 端口转发</span>
           <NIcon style="color: var(--ux-text-faint)"><ShieldCheckmarkOutline /></NIcon>
@@ -272,6 +412,33 @@ async function copy(label: string, text: string) {
   font-size: 11px;
   color: var(--ux-text-faint);
   align-self: center;
+}
+
+/* 令牌操作行：输入 + 生成 + 保存 */
+.token-row {
+  display: flex;
+  gap: 6px;
+}
+
+.token-row .n-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--ux-danger);
+}
+
+.masked {
+  letter-spacing: 0.08em;
+  user-select: none;
+}
+
+.restart-text {
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .qr-card {

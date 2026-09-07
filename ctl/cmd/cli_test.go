@@ -152,16 +152,16 @@ func TestBootRespectsAutostart(t *testing.T) {
 		} `json:"server"`
 	}
 	json.Unmarshal(raw, &d)
-	// 默认 autostart=true，但无激活二进制 → server 不运行，命令仍成功
-	if !d.Autostart || d.Server.Running {
+	// 默认 autostart=false，server 不运行
+	if d.Autostart || d.Server.Running {
 		t.Fatalf("boot data: %+v", d)
 	}
-	// 关闭 autostart 后 boot 直接跳过
-	runJSON(t, "--data-root", root, "server", "set", "--autostart=false")
+	// 开启 autostart 后（但无激活二进制）→ autostart=true，仍不运行
+	runJSON(t, "--data-root", root, "server", "set", "--autostart=true")
 	env = runJSON(t, "--data-root", root, "boot")
 	raw, _ = json.Marshal(env.Data)
 	json.Unmarshal(raw, &d)
-	if d.Autostart {
-		t.Fatal("autostart off but boot attempted start")
+	if !d.Autostart || d.Server.Running {
+		t.Fatalf("autostart on but unexpected state: %+v", d)
 	}
 }

@@ -48,9 +48,10 @@
 | 删除 | `DELETE /api/bin/:file?type=server\|gadget` | `api bin/remove --type --file` | — | `{"removed":"<file>"}` |
 | 激活 | `POST /api/bin/use` | `api bin/use --type --file` | `{"type","file"}` | `{"active":"<file>"}` |
 | 清理未激活 | `POST /api/bin/cleanup` | `api bin/cleanup` | — | `{"removed":["<file>"]}` |
-| 任务进度 | `GET /api/tasks/:id` | `api tasks/<id>` | — | Task（§4.5） |
+| 任务进度 | `GET /api/tasks/:id` | `api tasks/current` | — | Task（§4.6）；ksu 模式读哨兵文件，REST 模式按 id |
 | 日志 | `GET /api/logs?name=ctl\|server\|web&tail=200` | `api logs --name --tail` | — | `{"name","lines":[str]}` |
-| Web 服务信息 | `GET /api/web/info` | `api web/info` | — | WebInfo（§4.6） |
+| Web 服务信息 | `GET /api/web/info` | `api web/info` | — | WebInfo（§4.7） |
+| Web Token 管理 | `PUT /api/web/token` | `api web/token --payload '<json>'` | `{"token"?:str,"generate"?:bool}` | `{"token":str,"restart_required":bool}` |
 | 远程关停 | `POST /api/web/stop` | —（仅 REST） | — | `{"stopping":true}` |
 
 ## 4. 数据模型
@@ -106,17 +107,52 @@
 ### 4.6 Task（下载/导入进度轮询）
 
 ```json
-{ "id": "a1b2c3d4", "state": "running", "phase": "download", "detail": "official 17.2.14",
-  "error": "", "created_at": "…", "updated_at": "…" }
+{
+  "id": "a1b2c3d4",
+  "state": "running",
+  "phase": "download",
+  "detail": "official 17.2.14",
+  "bytes_done": 1048576,
+  "bytes_total": 20971520,
+  "error": "",
+  "created_at": "2026-09-07T12:00:00+08:00",
+  "updated_at": "2026-09-07T12:00:01+08:00"
+}
 ```
 
-`state` ∈ `running|done|error`；`phase` ∈ `download|decompress|install`（done 后无意义）。
+- `state` ∈ `running|done|error`；`phase` ∈ `resolve|download|decompress|install`（done 后无意义）。
+- `bytes_total <= 0` 表示未知总大小。
+- 写侧节流：≥300ms 或 ≥256KB 才更新一次。
+- ksu 模式下，`api bin/download` 保持同步阻塞并输出最终 Binary JSON；期间将任务进度写入哨兵文件 `<DATA_DIR>/download-task.json`。前端在 ksu 模式下通过 `ctl api tasks/current` 轮询哨兵文件（无进行中任务时返回 `ok:false`）。
 
 ### 4.7 WebInfo
 
 ```json
 { "running": true, "enabled": true, "port": 23333, "token": "ab12cd34" }
 ```
+
+### 4.8 WebToken（PUT /api/web/token 与 api web/token）
+
+入参 payload：
+```json
+{
+  "token": "custom-token-string",
+  "generate": false
+}
+```
+
+- `generate: true`：系统生成 32 字节 base64url 强随机 token（43 字符）；
+- `token`: 自定义 token（校验：trim 后 8–128 字符、ASCII 可打印、不含空白）；
+- 两者均未传时直接返回当前 token。
+
+返回 data：
+```json
+{
+  "token": "...",
+  "restart_required": true
+}
+```
+- `restart_required`：如果 web serve 常驻进程当前正在运行，则为 `true`（需重启 web 服务生效）。
 
 ## 5. 错误处理约定
 

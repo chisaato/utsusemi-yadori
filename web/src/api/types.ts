@@ -93,10 +93,13 @@ export interface Task {
   id: string
   /** running | done | error */
   state: string
-  /** download | decompress | install */
-  phase: string
-  detail: string
-  error: string
+  /** resolve | download | decompress | install（后端 omitempty，可能缺省） */
+  phase?: string
+  detail?: string
+  /** 已完成字节；bytes_total <= 0 表示未知总大小 */
+  bytes_done: number
+  bytes_total: number
+  error?: string
   created_at: string
   updated_at: string
 }
@@ -107,4 +110,10 @@ export interface WebInfo {
   enabled: boolean
   port: number
   token: string
+}
+
+/** 契约 §4.8 WebToken 返回；restart_required = web 服务运行中，需重启生效 */
+export interface WebTokenResult {
+  token: string
+  restart_required: boolean
 }

@@ -37,7 +37,7 @@ type Settings struct {
 
 func DefaultSettings() Settings {
 	return Settings{
-		Server:   ServerSettings{Autostart: true, Args: []string{"-l", "127.0.0.1:27042"}},
+		Server:   ServerSettings{Autostart: false, Args: []string{"-l", "127.0.0.1:27042"}},
 		Web:      WebSettings{Port: 23333},
 		Download: DownloadSettings{GithubAPI: "https://api.github.com"},
 	}

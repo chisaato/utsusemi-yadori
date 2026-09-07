@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"utsusemi/ctl/internal/binmgr"
 	"utsusemi/ctl/internal/core"
@@ -126,12 +127,48 @@ func (o *opsImpl) BinSources() (any, error) {
 	return out, nil
 }
 
-// doDownload 解析版本→找资产→安装；upd 上报进度（同步模式传 no-op）
-func (o *opsImpl) doDownload(ctx context.Context, m *binmgr.Manager, variant, binType, version string, upd func(phase, detail string) error) (core.Binary, error) {
+// throttleTracker 用于 bytes 节流：≥300ms 或 ≥256KB 才触发写操作
+type throttleTracker struct {
+	lastTime  time.Time
+	lastBytes int64
+}
+
+func (t *throttleTracker) shouldUpdate(bytes int64, now time.Time) bool {
+	if t.lastTime.IsZero() {
+		t.lastTime = now
+		t.lastBytes = bytes
+		return true
+	}
+	if now.Sub(t.lastTime) >= 300*time.Millisecond || bytes-t.lastBytes >= 256*1024 || bytes < t.lastBytes {
+		t.lastTime = now
+		t.lastBytes = bytes
+		return true
+	}
+	return false
+}
+
+// writeSentinelTask 原子写入哨兵文件
+func writeSentinelTask(p core.Paths, task web.Task) error {
+	task.UpdatedAt = time.Now()
+	data, err := json.MarshalIndent(task, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := p.DownloadTaskFile() + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p.DownloadTaskFile())
+}
+
+// doDownload 解析版本→找资产→安装；updProgress 上报进度（包含 phase, detail, done, total）
+func (o *opsImpl) doDownload(ctx context.Context, m *binmgr.Manager, variant, binType, version string, updProgress func(phase, detail string, done, total int64)) (core.Binary, error) {
 	if binType == "" {
 		binType = "server"
 	}
-	upd("resolve", variant)
+	if updProgress != nil {
+		updProgress("resolve", variant, 0, 0)
+	}
 	if version == "" {
 		cl := dl.NewClient(m.S.Download)
 		vs, err := cl.ListVersions(ctx, variant)
@@ -143,13 +180,27 @@ func (o *opsImpl) doDownload(ctx context.Context, m *binmgr.Manager, variant, bi
 		}
 		version = vs[0]
 	}
-	upd("download", variant+" "+version)
+	if updProgress != nil {
+		updProgress("download", variant+" "+version, 0, 0)
+	}
 	cl := dl.NewClient(m.S.Download)
 	a, err := cl.FindAsset(ctx, variant, version, binType, core.DeviceArch())
 	if err != nil {
 		return core.Binary{}, err
 	}
-	return dl.Install(ctx, m.P, m.S, m.M, variant, a)
+	onBytes := func(done, total int64) {
+		if updProgress != nil {
+			updProgress("download", variant+" "+version, done, total)
+		}
+	}
+	b, err := dl.Install(ctx, m.P, m.S, m.M, variant, a, onBytes)
+	if err != nil {
+		return core.Binary{}, err
+	}
+	if updProgress != nil {
+		updProgress("install", b.File, b.Size, b.Size)
+	}
+	return b, nil
 }
 
 func (o *opsImpl) BinDownload(variant, binType, version string, async bool, tm *web.TaskManager) (any, error) {
@@ -158,12 +209,56 @@ func (o *opsImpl) BinDownload(variant, binType, version string, async bool, tm *
 		return nil, err
 	}
 	if !async {
-		noOp := func(string, string) error { return nil }
-		return o.doDownload(context.Background(), m, variant, binType, version, noOp)
+		// ksu 同步执行模式：写哨兵文件 + 节流上报
+		task := web.Task{
+			ID:         "current",
+			State:      "running",
+			Phase:      "resolve",
+			Detail:     variant,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+			BytesDone:  0,
+			BytesTotal: 0,
+		}
+		_ = writeSentinelTask(o.P, task)
+		tracker := &throttleTracker{}
+		updProgress := func(phase, detail string, done, total int64) {
+			task.Phase = phase
+			task.Detail = detail
+			task.BytesDone = done
+			task.BytesTotal = total
+			now := time.Now()
+			// phase 变更或满足节流阈值时写盘
+			if phase != task.Phase || tracker.shouldUpdate(done, now) {
+				_ = writeSentinelTask(o.P, task)
+			}
+		}
+		b, err := o.doDownload(context.Background(), m, variant, binType, version, updProgress)
+		if err != nil {
+			task.State = "error"
+			task.Error = err.Error()
+			_ = writeSentinelTask(o.P, task)
+			return nil, err
+		}
+		task.State = "done"
+		task.Phase = "install"
+		task.Detail = b.File
+		task.BytesDone = b.Size
+		task.BytesTotal = b.Size
+		_ = writeSentinelTask(o.P, task)
+		return b, nil
 	}
+
 	id := web.NewTaskID()
-	tm.Start(id, func(upd func(phase, detail string) error) error {
-		_, err := o.doDownload(context.Background(), m, variant, binType, version, upd)
+	tm.Start(id, func(legacyUpd func(phase, detail string) error) error {
+		tracker := &throttleTracker{}
+		updProgress := func(phase, detail string, done, total int64) {
+			now := time.Now()
+			if phase == "resolve" || phase == "install" || tracker.shouldUpdate(done, now) {
+				tm.UpdateProgress(id, phase, detail, done, total)
+			}
+		}
+		_, err := o.doDownload(context.Background(), m, variant, binType, version, updProgress)
 		return err
 	})
 	return map[string]string{"task_id": id}, nil
@@ -277,4 +372,75 @@ func (o *opsImpl) WebInfo() (any, error) {
 		"port":    port,
 		"token":   s.Web.Token,
 	}, nil
+}
+
+func validateToken(token string) error {
+	trimmed := strings.TrimSpace(token)
+	if len(trimmed) < 8 || len(trimmed) > 128 {
+		return fmt.Errorf("token length must be 8-128 chars")
+	}
+	for i := 0; i < len(trimmed); i++ {
+		b := trimmed[i]
+		if b < 33 || b > 126 { // 不含空白与控制字符，全 ASCII 可打印
+			return fmt.Errorf("token contains invalid char %q", b)
+		}
+	}
+	return nil
+}
+
+func (o *opsImpl) WebToken(payload []byte) (any, error) {
+	s, err := core.LoadSettings(o.P)
+	if err != nil {
+		return nil, err
+	}
+	var req struct {
+		Token    *string `json:"token"`
+		Generate bool    `json:"generate"`
+	}
+	if len(payload) > 0 && strings.TrimSpace(string(payload)) != "" && string(payload) != "{}" {
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return nil, fmt.Errorf("invalid json payload: %w", err)
+		}
+	}
+
+	targetToken := s.Web.Token
+	changed := false
+	if req.Generate {
+		targetToken = core.GenToken()
+		changed = true
+	} else if req.Token != nil {
+		trimmed := strings.TrimSpace(*req.Token)
+		if err := validateToken(trimmed); err != nil {
+			return nil, err
+		}
+		targetToken = trimmed
+		changed = true
+	}
+
+	if changed {
+		s.Web.Token = targetToken
+		if err := core.SaveSettings(o.P, s); err != nil {
+			return nil, err
+		}
+	}
+
+	return map[string]any{
+		"token":            targetToken,
+		"restart_required": webAlive(o.P),
+	}, nil
+}
+
+func (o *opsImpl) TaskCurrent() (any, error) {
+	raw, err := os.ReadFile(o.P.DownloadTaskFile())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("no current task")
+		}
+		return nil, err
+	}
+	var t web.Task
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return nil, fmt.Errorf("malformed sentinel task: %w", err)
+	}
+	return t, nil
 }

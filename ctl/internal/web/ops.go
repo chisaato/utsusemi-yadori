@@ -19,4 +19,6 @@ type Ops interface {
 	BinCleanup() (any, error)
 	Logs(name string, tail int) (any, error) // name ∈ ctl|server|web
 	WebInfo() (any, error)
+	WebToken(payload []byte) (any, error)
+	TaskCurrent() (any, error)
 }

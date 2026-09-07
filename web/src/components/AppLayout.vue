@@ -92,6 +92,8 @@ onUnmounted(() => window.removeEventListener('utsusemi:unauthorized', onUnauthor
       <RouterLink to="/" class="brand" style="text-decoration: none; color: inherit">
         <span class="brand-name">空蝉宿</span>
         <span class="brand-sub">utsusemi</span>
+        <!-- 传输模式徽标：紧随标题，小尺寸不抢焦点 -->
+        <span class="transport-chip sm mono" :title="chipTitle">{{ transportLabel }}</span>
       </RouterLink>
       <nav class="rail-nav">
         <RouterLink
@@ -106,7 +108,6 @@ onUnmounted(() => window.removeEventListener('utsusemi:unauthorized', onUnauthor
         </RouterLink>
       </nav>
       <div class="rail-foot">
-        <span class="transport-chip mono" :title="chipTitle">{{ transportLabel }}</span>
         <n-tooltip placement="top-end">
           <template #trigger>
             <n-button quaternary circle size="small" @click="onCycle">
@@ -123,18 +124,19 @@ onUnmounted(() => window.removeEventListener('utsusemi:unauthorized', onUnauthor
     <div class="main-col">
       <!-- 移动端顶栏 -->
       <header class="topbar">
-        <RouterLink to="/" class="brand" style="text-decoration: none; color: inherit">
-          <span class="brand-name">空蝉宿</span>
-          <span class="brand-sub">utsusemi</span>
-        </RouterLink>
-        <div style="display: flex; align-items: center; gap: 8px">
-          <span class="transport-chip mono" :title="chipTitle">{{ transportLabel }}</span>
-          <n-button quaternary circle size="small" @click="onCycle">
-            <template #icon>
-              <n-icon :component="themeIcon" />
-            </template>
-          </n-button>
+        <div class="topbar-left">
+          <RouterLink to="/" class="brand" style="text-decoration: none; color: inherit">
+            <span class="brand-name">空蝉宿</span>
+            <span class="brand-sub">utsusemi</span>
+          </RouterLink>
+          <!-- 传输模式徽标：标题右侧小 chip -->
+          <span class="transport-chip sm mono" :title="chipTitle">{{ transportLabel }}</span>
         </div>
+        <n-button quaternary circle size="small" @click="onCycle">
+          <template #icon>
+            <n-icon :component="themeIcon" />
+          </template>
+        </n-button>
       </header>
 
       <main class="content">

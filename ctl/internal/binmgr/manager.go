@@ -58,12 +58,13 @@ func (m *Manager) Import(binType, srcPath, version string) (core.Binary, error) 
 	if err != nil {
 		return core.Binary{}, fmt.Errorf("inspect %s: %w", srcPath, err)
 	}
-	wantType := "exec"
-	if binType == "gadget" {
-		wantType = "dyn"
+	// server 允许 exec 或 dyn（Android NDK 编译的 PIE 二进制均为 ET_DYN）
+	// gadget 必须为 dyn（共享库）
+	if binType == "gadget" && info.Type != "dyn" {
+		return core.Binary{}, fmt.Errorf("%s: want ELF dyn, got %s", srcPath, info.Type)
 	}
-	if info.Type != wantType {
-		return core.Binary{}, fmt.Errorf("%s: want ELF %s, got %s", srcPath, wantType, info.Type)
+	if binType == "server" && info.Type != "exec" && info.Type != "dyn" {
+		return core.Binary{}, fmt.Errorf("%s: want ELF exec/dyn, got %s", srcPath, info.Type)
 	}
 	if version == "" {
 		version = "unknown"

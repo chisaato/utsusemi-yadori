@@ -3,7 +3,7 @@
  * 每个函数同时给出 REST 与 ctl 两种形态，传输选择由 client.request 决定。
  */
 import { request } from './client'
-import type { AppItem, Binary, BinSource, Rules, ServerSettings, Status, SrvStatus, Task, WebInfo } from './types'
+import type { AppItem, Binary, BinSource, Rules, ServerSettings, Status, SrvStatus, Task, WebInfo, WebTokenResult } from './types'
 
 /* ---------------- 总览 / server ---------------- */
 
@@ -82,11 +82,17 @@ export const binUse = (type: string, file: string) =>
 export const binCleanup = () =>
   request<{ removed: string[] }>({ method: 'POST', path: '/api/bin/cleanup' }, { sub: 'bin/cleanup' })
 
+/**
+ * 任务进度：REST 按 id 轮询；ksu 形态固定 tasks/current（哨兵文件，无 by-id 查询，契约 §4.6）。
+ */
 export const getTask = (id: string) =>
   request<Task>(
     { method: 'GET', path: `/api/tasks/${encodeURIComponent(id)}` },
-    { sub: `tasks/${id}` },
+    { sub: 'tasks/current' },
   )
+
+/** ksu 当前任务（哨兵文件）；无进行中任务时 ok:false 抛错。仅 ksu 模式使用。 */
+export const getTaskCurrent = () => request<Task>(null, { sub: 'tasks/current' })
 
 /* ---------------- 日志 / 远程协同 ---------------- */
 
@@ -98,6 +104,13 @@ export const getLogs = (name: string, tail: number) =>
 
 export const webInfo = () =>
   request<WebInfo>({ method: 'GET', path: '/api/web/info' }, { sub: 'web/info' })
+
+/** Web Token 管理（契约 §4.8）：generate 或传自定义 token；空 payload = 读取当前 */
+export const setWebToken = (payload: { token?: string; generate?: boolean }) =>
+  request<WebTokenResult>(
+    { method: 'PUT', path: '/api/web/token', body: payload },
+    { sub: 'web/token', payload },
+  )
 
 /** 远程关停仅 REST；ksu 模式的启停用 client.execCtlRaw 走原生命令 */
 export const webStop = () =>

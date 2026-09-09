@@ -3,7 +3,7 @@
  * 每个函数同时给出 REST 与 ctl 两种形态，传输选择由 client.request 决定。
  */
 import { request } from './client'
-import type { AppItem, Binary, BinSource, Rules, ServerSettings, Status, SrvStatus, Task, WebInfo, WebTokenResult } from './types'
+import type { AppItem, Binary, BinSource, BinUseResult, Rules, ServerSettings, Status, SrvStatus, Task, WebInfo, WebTokenResult, AdbStatus, AdbSettings, AdbCurrentStatus } from './types'
 
 /* ---------------- 总览 / server ---------------- */
 
@@ -74,7 +74,7 @@ export const binRemove = (type: string, file: string) =>
   )
 
 export const binUse = (type: string, file: string) =>
-  request<{ active: string }>(
+  request<BinUseResult>(
     { method: 'POST', path: '/api/bin/use', body: { type, file } },
     { sub: 'bin/use', flags: { type, file } },
   )
@@ -115,3 +115,39 @@ export const setWebToken = (payload: { token?: string; generate?: boolean }) =>
 /** 远程关停仅 REST；ksu 模式的启停用 client.execCtlRaw 走原生命令 */
 export const webStop = () =>
   request<{ stopping: boolean }>({ method: 'POST', path: '/api/web/stop' }, null)
+
+/* ---------------- ADB 管理 ---------------- */
+
+export const getAdbStatus = () =>
+  request<AdbStatus>({ method: 'GET', path: '/api/adb' }, { sub: 'adb/status' })
+
+export const setAdbSettings = (s: Partial<AdbSettings> & { apply?: boolean }) =>
+  request<{ saved: boolean; applied: boolean; settings: AdbSettings }>(
+    { method: 'PUT', path: '/api/adb/settings', body: s },
+    { sub: 'adb/set', payload: s },
+  )
+
+export const setAdbUsb = (enabled: boolean, save = false) =>
+  request<AdbCurrentStatus>(
+    { method: 'POST', path: '/api/adb/usb', body: { enabled, save } },
+    { sub: 'adb/usb', payload: { enabled, save } },
+  )
+
+export const setAdbTcpip = (enabled: boolean, port = 5555, save = false) =>
+  request<AdbCurrentStatus>(
+    { method: 'POST', path: '/api/adb/tcpip', body: { enabled, port, save } },
+    { sub: 'adb/tcpip', payload: { enabled, port, save } },
+  )
+
+export const restartAdb = () =>
+  request<AdbCurrentStatus | { restarted: boolean }>(
+    { method: 'POST', path: '/api/adb/restart' },
+    { sub: 'adb/restart' },
+  )
+
+export const applyAdbSettings = () =>
+  request<{ applied: boolean; current: AdbCurrentStatus; settings: AdbSettings }>(
+    { method: 'POST', path: '/api/adb/apply' },
+    { sub: 'adb/apply' },
+  )
+

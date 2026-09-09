@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-09-08T00:00:00.000Z",
+  "dependencies": [
+    {
+      "name": "frida",
+      "resolvedVersion": "0df58a991beb20ea37f3c4172982cecd5fec3dbb",
+      "repoUrl": "https://github.com/frida/frida.git",
+      "ref": "HEAD (2026-09-08)",
+      "path": ".slim/clonedeps/repos/frida__frida",
+      "reason": "Frida 主仓库(meson subprojects 入口),子模块指针与构建入口"
+    },
+    {
+      "name": "frida-gum",
+      "resolvedVersion": "955bc895ca9f90503542587856561c9fa6f8f902",
+      "repoUrl": "https://github.com/frida/frida-gum.git",
+      "ref": "HEAD (2026-09-08)",
+      "path": ".slim/clonedeps/repos/frida__frida-gum",
+      "reason": "Frida 运行时:Android/Linux 模块枚举(gum/backend-linux/)、DEX 模块支持、gumandroid ART/linker 适配,排查 enumerateModules 只见 dex 问题的核心源码"
+    },
+    {
+      "name": "frida-core",
+      "resolvedVersion": "bb0550a900071ce0e1993c03a9961d09f6b29ce1",
+      "repoUrl": "https://github.com/frida/frida-core.git",
+      "ref": "HEAD (2026-09-08)",
+      "path": ".slim/clonedeps/repos/frida__frida-core",
+      "reason": "frida-server/注入器(spawn、linjector、agent 注入)源码,排查 server 侧行为"
+    }
+  ]
+}

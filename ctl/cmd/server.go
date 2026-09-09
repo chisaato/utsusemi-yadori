@@ -60,6 +60,8 @@ func serverSetCmd() *cobra.Command {
 			if err != nil {
 				return fail(c, err)
 			}
+			// 记录切换动作：新值与旧值不同才视为切换核心
+			switched := c.Flags().Changed("active") && s.Server.Active != active
 			if c.Flags().Changed("active") {
 				s.Server.Active = active
 			}
@@ -71,6 +73,15 @@ func serverSetCmd() *cobra.Command {
 			}
 			if err := core.SaveSettings(paths(), s); err != nil {
 				return fail(c, err)
+			}
+			// 切换核心后终止旧进程并清理残留，绝不自动启动
+			if switched {
+				if _, err := srv.New(paths()).Stop(); err != nil {
+					return fail(c, err)
+				}
+				if _, err := srv.KillResiduals(paths()); err != nil {
+					return fail(c, err)
+				}
 			}
 			emit(c, Envelope{OK: true, Data: s.Server})
 			return nil

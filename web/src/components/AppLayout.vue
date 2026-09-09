@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { NButton, NIcon, NTooltip, useDialog, useMessage } from 'naive-ui'
 import {
   AppsOutline,
+  CodeWorkingOutline,
   ContrastOutline,
   CubeOutline,
   HomeOutline,
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { key: 'overview', to: '/', label: '总览', icon: HomeOutline },
   { key: 'apps', to: '/apps', label: '注入', icon: AppsOutline },
   { key: 'bin', to: '/bin', label: '二进制', icon: CubeOutline },
+  { key: 'adb', to: '/adb', label: 'ADB', icon: CodeWorkingOutline },
   { key: 'remote', to: '/remote', label: '远程', icon: QrCodeOutline },
   { key: 'logs', to: '/logs', label: '日志', icon: TerminalOutline },
 ]

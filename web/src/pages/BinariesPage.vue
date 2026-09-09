@@ -86,11 +86,19 @@ const VARIANT_TYPE: Record<string, 'success' | 'warning' | 'error' | 'info' | 'd
 const busyFile = ref('')
 
 async function use(bin: Binary) {
-  if (busyFile.value) return
+  if (busyFile.value) {
+    return
+  }
   busyFile.value = bin.file
   try {
-    await binUse(groupTab.value, bin.file)
-    message.success(`已激活 ${bin.file}`)
+    const res = await binUse(groupTab.value, bin.file)
+    if (groupTab.value === 'server' && res.stopped_previous) {
+      message.warning(`已激活 ${bin.file}，原运行进程已停止，需手动启动新核心`, {
+        duration: 5000,
+      })
+    } else {
+      message.success(`已激活 ${bin.file}`)
+    }
     await reloadList()
   } catch (e) {
     message.error(errMsg(e))

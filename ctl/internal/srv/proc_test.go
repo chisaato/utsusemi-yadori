@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,5 +78,80 @@ func TestStartWithoutActiveBinary(t *testing.T) {
 	p.Ensure()
 	if _, err := New(p).Start(); err == nil {
 		t.Fatal("start without active should fail")
+	}
+}
+
+func TestParseListenPort(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"default", nil, 27042},
+		{"short", []string{"-l", "127.0.0.1:28042"}, 28042},
+		{"long equals", []string{"--listen=0.0.0.0:29042"}, 29042},
+		{"colon only", []string{"-l", ":30042"}, 30042},
+		{"bare port", []string{"-l", "31042"}, 31042},
+		{"invalid", []string{"-l", "not-a-port"}, 27042},
+		{"zero", []string{"-l", "127.0.0.1:0"}, 27042},
+		{"out of range", []string{"-l", "127.0.0.1:70000"}, 27042},
+		{"missing value", []string{"-l"}, 27042},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseListenPort(tc.args); got != tc.want {
+				t.Fatalf("parseListenPort(%v)=%d want %d", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestKillResidualsStopsServer 验证残留清理会终止 pidfile 记录的进程、
+// 清空 pidfile 并把 module.prop 标记为 stopped
+func TestKillResidualsStopsServer(t *testing.T) {
+	p := core.New(t.TempDir())
+	if err := p.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fakeServer(t, p)
+	m := New(p)
+
+	st, err := m.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Running || st.PID <= 0 {
+		t.Fatalf("start: %+v", st)
+	}
+	// 预置 module.prop 以验证状态回写
+	if err := os.MkdirAll(filepath.Dir(p.ModuleProp()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.ModuleProp(), []byte("id=utsusemi\ndescription=frida-server: ● running\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	killed, err := KillResiduals(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(killed) == 0 {
+		t.Fatal("expected residual pid to be killed")
+	}
+	if alive(st.PID, "fakeserver") {
+		t.Fatalf("pid %d still alive after KillResiduals", st.PID)
+	}
+	if _, err := os.Stat(p.PidFile()); !os.IsNotExist(err) {
+		t.Fatalf("pidfile not removed: %v", err)
+	}
+	raw, err := os.ReadFile(p.ModuleProp())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "○ stopped") {
+		t.Fatalf("module.prop not stopped: %s", raw)
+	}
+	if got := m.Status(); got.Running {
+		t.Fatalf("status still running: %+v", got)
 	}
 }

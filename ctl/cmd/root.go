@@ -36,7 +36,7 @@ func NewRoot() *cobra.Command {
 	root.PersistentFlags().StringVar(&dataRoot, "data-root", core.DefaultDataDir(), "数据根目录")
 	root.PersistentFlags().StringVar(&stageDir, "stage", core.DefaultStageDir(), "发布区目录（app 进程可读）")
 	root.PersistentFlags().BoolVar(&asJSON, "json", false, "以 JSON 信封输出")
-	root.AddCommand(newVersionCmd(), newBinCmd(), newServerCmd(), newGadgetCmd(), newStatusCmd(), newBootCmd(), newAPICmd(), newWebCmd())
+	root.AddCommand(newVersionCmd(), newBinCmd(), newServerCmd(), newGadgetCmd(), newStatusCmd(), newBootCmd(), newAPICmd(), newWebCmd(), newAdbCmd())
 	return root
 }
 

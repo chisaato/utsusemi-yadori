@@ -25,6 +25,11 @@ export interface Binary {
 }
 
 /** 契约 §4.1 内 server 字段 */
+export interface BinUseResult {
+  active: string
+  stopped_previous?: boolean
+}
+
 export interface SrvStatus {
   running: boolean
   pid?: number
@@ -117,3 +122,27 @@ export interface WebTokenResult {
   token: string
   restart_required: boolean
 }
+
+/** ADB 实时状态 */
+export interface AdbCurrentStatus {
+  adbd_running: boolean
+  usb_enabled: boolean
+  tcpip_enabled: boolean
+  tcpip_port: number
+  ips: string[]
+}
+
+/** ADB 持久化设置 */
+export interface AdbSettings {
+  usb_enabled: boolean
+  tcpip_enabled: boolean
+  port: number
+  apply_on_boot: boolean
+}
+
+/** ADB 完整状态响应 */
+export interface AdbStatus {
+  current: AdbCurrentStatus
+  settings: AdbSettings
+}
+

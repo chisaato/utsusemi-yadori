@@ -29,6 +29,13 @@ func newAPICmd() *cobra.Command {
 		apiBinDownloadCmd(), apiBinImportCmd(), apiBinRemoveCmd(), apiBinUseCmd(),
 		apiSimpleCmd("bin/cleanup", func(o web.Ops) (any, error) { return o.BinCleanup() }),
 		apiLogsCmd(),
+		// ADB API 同构
+		apiSimpleCmd("adb/status", func(o web.Ops) (any, error) { return o.AdbStatus() }),
+		apiPayloadCmd("adb/set", func(o web.Ops, payload []byte) (any, error) { return o.AdbSet(payload) }),
+		apiPayloadCmd("adb/usb", func(o web.Ops, payload []byte) (any, error) { return o.AdbUsb(payload) }),
+		apiPayloadCmd("adb/tcpip", func(o web.Ops, payload []byte) (any, error) { return o.AdbTcpip(payload) }),
+		apiSimpleCmd("adb/restart", func(o web.Ops) (any, error) { return o.AdbRestart() }),
+		apiSimpleCmd("adb/apply", func(o web.Ops) (any, error) { return o.AdbApply() }),
 	)
 	return c
 }

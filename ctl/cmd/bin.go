@@ -8,6 +8,7 @@ import (
 	"utsusemi/ctl/internal/binmgr"
 	"utsusemi/ctl/internal/core"
 	"utsusemi/ctl/internal/dl"
+	"utsusemi/ctl/internal/srv"
 )
 
 func newBinCmd() *cobra.Command {
@@ -180,6 +181,15 @@ func binUseCmd() *cobra.Command {
 			m, err := binmgr.New(paths())
 			if err != nil {
 				return fail(c, err)
+			}
+			// 切换 server 核心：先终止旧进程并清理残留，绝不自动启动
+			if typ == "server" {
+				if _, err := srv.New(paths()).Stop(); err != nil {
+					return fail(c, err)
+				}
+				if _, err := srv.KillResiduals(paths()); err != nil {
+					return fail(c, err)
+				}
 			}
 			if err := m.SetActive(typ, file); err != nil {
 				return fail(c, err)

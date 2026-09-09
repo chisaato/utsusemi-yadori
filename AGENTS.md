@@ -25,3 +25,12 @@ if (!f) {
     message.warning('请先选择文件')
 }
 ```
+
+## Cloned Dependency Source
+
+Read-only dependency source repositories are available under
+`.slim/clonedeps/repos/` for inspection. Do not edit these clones.
+
+- `.slim/clonedeps/repos/frida__frida/` - `frida/frida` at HEAD(浅克隆);主仓库入口与子模块指针,源码在下列独立子仓库。
+- `.slim/clonedeps/repos/frida__frida-gum/` - `frida/frida-gum` at HEAD(浅克隆);Frida 运行时源码,`gum/backend-linux/`(gumprocess-linux.c、gumandroid.c 等)是模块枚举/注入机制的核心。
+- `.slim/clonedeps/repos/frida__frida-core/` - `frida/frida-core` at HEAD(浅克隆);frida-server、注入器与 spawn 逻辑源码。

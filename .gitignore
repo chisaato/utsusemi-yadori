@@ -10,3 +10,7 @@ template/webroot/*
 !template/webroot/.gitkeep
 ctl/webui/dist/*
 !ctl/webui/dist/.placeholder
+
+# BEGIN oh-my-opencode-slim clonedeps
+.slim/clonedeps/repos/
+# END oh-my-opencode-slim clonedeps

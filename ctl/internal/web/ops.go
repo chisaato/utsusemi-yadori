@@ -21,4 +21,10 @@ type Ops interface {
 	WebInfo() (any, error)
 	WebToken(payload []byte) (any, error)
 	TaskCurrent() (any, error)
+	AdbStatus() (any, error)
+	AdbSet(payload []byte) (any, error)
+	AdbUsb(payload []byte) (any, error)
+	AdbTcpip(payload []byte) (any, error)
+	AdbRestart() (any, error)
+	AdbApply() (any, error)
 }

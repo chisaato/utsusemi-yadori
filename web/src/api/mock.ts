@@ -86,6 +86,14 @@ const db = {
     } as ServerSettings,
     gadget: { active: 'official_17.2.14_arm64.so' },
     download: { mirror: '', github_api: 'https://api.github.com' },
+    adb: { usb_enabled: true, tcpip_enabled: false, port: 5555, apply_on_boot: false },
+  },
+  adbCurrent: {
+    adbd_running: true,
+    usb_enabled: true,
+    tcpip_enabled: false,
+    tcpip_port: -1,
+    ips: ['192.168.1.102', '10.0.0.15'],
   },
   web: { running: true, enabled: true, port: 23333, token: 'm0cktok42' },
   tasks: new Map<string, MockTask>(),
@@ -428,6 +436,57 @@ export async function mockRequest<T>(rest: RestSpec | null, ctl: CtlSpec | null)
         db.web.token = target
         // restart_required = web 服务正在运行（webAlive）
         return { token: target, restart_required: db.web.running } as T
+      }
+      if (key === 'adb/status' || key === 'GET /api/adb') {
+        return {
+          current: { ...db.adbCurrent },
+          settings: { ...db.settings.adb },
+        } as T
+      }
+      if (key === 'adb/set' || key === 'PUT /api/adb/settings') {
+        const payload = (ctl?.payload ?? rest?.body ?? {}) as any
+        db.settings.adb = { ...db.settings.adb, ...payload }
+        if (payload.apply) {
+          db.adbCurrent.usb_enabled = db.settings.adb.usb_enabled
+          db.adbCurrent.tcpip_enabled = db.settings.adb.tcpip_enabled
+          db.adbCurrent.tcpip_port = db.settings.adb.tcpip_enabled ? db.settings.adb.port : -1
+          db.adbCurrent.adbd_running = db.adbCurrent.usb_enabled || db.adbCurrent.tcpip_enabled
+        }
+        return { saved: true, applied: Boolean(payload.apply), settings: { ...db.settings.adb } } as T
+      }
+      if (key === 'adb/usb' || key === 'POST /api/adb/usb') {
+        const payload = (ctl?.payload ?? rest?.body ?? {}) as any
+        db.adbCurrent.usb_enabled = Boolean(payload.enabled)
+        if (payload.save) {
+          db.settings.adb.usb_enabled = db.adbCurrent.usb_enabled
+        }
+        db.adbCurrent.adbd_running = db.adbCurrent.usb_enabled || db.adbCurrent.tcpip_enabled
+        return { ...db.adbCurrent } as T
+      }
+      if (key === 'adb/tcpip' || key === 'POST /api/adb/tcpip') {
+        const payload = (ctl?.payload ?? rest?.body ?? {}) as any
+        db.adbCurrent.tcpip_enabled = Boolean(payload.enabled)
+        const port = Number(payload.port || 5555)
+        db.adbCurrent.tcpip_port = payload.enabled ? port : -1
+        if (payload.save) {
+          db.settings.adb.tcpip_enabled = db.adbCurrent.tcpip_enabled
+          if (payload.enabled) {
+            db.settings.adb.port = port
+          }
+        }
+        db.adbCurrent.adbd_running = db.adbCurrent.usb_enabled || db.adbCurrent.tcpip_enabled
+        return { ...db.adbCurrent } as T
+      }
+      if (key === 'adb/restart' || key === 'POST /api/adb/restart') {
+        db.adbCurrent.adbd_running = true
+        return { ...db.adbCurrent } as T
+      }
+      if (key === 'adb/apply' || key === 'POST /api/adb/apply') {
+        db.adbCurrent.usb_enabled = db.settings.adb.usb_enabled
+        db.adbCurrent.tcpip_enabled = db.settings.adb.tcpip_enabled
+        db.adbCurrent.tcpip_port = db.settings.adb.tcpip_enabled ? db.settings.adb.port : -1
+        db.adbCurrent.adbd_running = db.adbCurrent.usb_enabled || db.adbCurrent.tcpip_enabled
+        return { applied: true, current: { ...db.adbCurrent }, settings: { ...db.settings.adb } } as T
       }
       throw new Error('mock 未实现的调用：' + key)
     }

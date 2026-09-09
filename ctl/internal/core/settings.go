@@ -28,11 +28,19 @@ type DownloadSettings struct {
 	GithubAPI string `json:"github_api"` // API base，默认 https://api.github.com
 }
 
+type AdbSettings struct {
+	UsbEnabled   bool `json:"usb_enabled"`   // 是否启用 USB 调试
+	TcpipEnabled bool `json:"tcpip_enabled"` // 是否启用网络调试
+	Port         int  `json:"port"`          // 网络调试端口，默认 5555
+	ApplyOnBoot  bool `json:"apply_on_boot"` // 开机 (boot) 时是否自动应用该 ADB 配置
+}
+
 type Settings struct {
 	Server   ServerSettings   `json:"server"`
 	Gadget   GadgetSettings   `json:"gadget"`
 	Web      WebSettings      `json:"web"`
 	Download DownloadSettings `json:"download"`
+	Adb      AdbSettings      `json:"adb"`
 }
 
 func DefaultSettings() Settings {
@@ -40,6 +48,7 @@ func DefaultSettings() Settings {
 		Server:   ServerSettings{Autostart: false, Args: []string{"-l", "127.0.0.1:27042"}},
 		Web:      WebSettings{Port: 23333},
 		Download: DownloadSettings{GithubAPI: "https://api.github.com"},
+		Adb:      AdbSettings{UsbEnabled: true, TcpipEnabled: false, Port: 5555, ApplyOnBoot: false},
 	}
 }
 

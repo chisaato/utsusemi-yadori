@@ -173,6 +173,34 @@ func (s *Server) routes(api *gin.RouterGroup) {
 			go s.OnStop() // 异步：先让响应落地，serve 循环随后退出
 		}
 	})
+	// ADB 相关端点
+	api.GET("/adb", func(c *gin.Context) { call(c, s.Ops.AdbStatus) })
+	api.PUT("/adb/settings", func(c *gin.Context) {
+		payload, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			ok(c, nil, err)
+			return
+		}
+		call(c, func() (any, error) { return s.Ops.AdbSet(payload) })
+	})
+	api.POST("/adb/usb", func(c *gin.Context) {
+		payload, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			ok(c, nil, err)
+			return
+		}
+		call(c, func() (any, error) { return s.Ops.AdbUsb(payload) })
+	})
+	api.POST("/adb/tcpip", func(c *gin.Context) {
+		payload, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			ok(c, nil, err)
+			return
+		}
+		call(c, func() (any, error) { return s.Ops.AdbTcpip(payload) })
+	})
+	api.POST("/adb/restart", func(c *gin.Context) { call(c, s.Ops.AdbRestart) })
+	api.POST("/adb/apply", func(c *gin.Context) { call(c, s.Ops.AdbApply) })
 }
 
 // saveUpload 把 multipart 文件落到临时目录并保留原文件名（Import 以文件名为 key）

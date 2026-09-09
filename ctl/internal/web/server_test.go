@@ -87,6 +87,24 @@ func (m *mockOps) WebToken(p []byte) (any, error) {
 func (m *mockOps) TaskCurrent() (any, error) {
 	return Task{ID: "ksu", State: "running", Phase: "download"}, nil
 }
+func (m *mockOps) AdbStatus() (any, error) {
+	return map[string]any{"current": map[string]any{"adbd_running": true}, "settings": map[string]any{"usb_enabled": true}}, nil
+}
+func (m *mockOps) AdbSet(p []byte) (any, error) {
+	return map[string]any{"saved": true, "applied": false}, nil
+}
+func (m *mockOps) AdbUsb(p []byte) (any, error) {
+	return map[string]any{"usb_enabled": true}, nil
+}
+func (m *mockOps) AdbTcpip(p []byte) (any, error) {
+	return map[string]any{"tcpip_enabled": true, "tcpip_port": 5555}, nil
+}
+func (m *mockOps) AdbRestart() (any, error) {
+	return map[string]any{"restarted": true}, nil
+}
+func (m *mockOps) AdbApply() (any, error) {
+	return map[string]any{"applied": true}, nil
+}
 
 func newTestServer(t *testing.T) (*mockOps, *httptest.Server) {
 	t.Helper()
@@ -271,6 +289,26 @@ func TestEndpointsMatrix(t *testing.T) {
 	}
 	if env := decode(t, respToken); env["ok"] != true {
 		t.Fatalf("PUT /web/token: %v", env)
+	}
+
+	// adb endpoints
+	if env := get("/adb?"); env["ok"] != true {
+		t.Fatalf("GET /adb: %v", env)
+	}
+	if env := put("/adb/settings", `{"usb_enabled":true,"tcpip_enabled":true,"port":5555}`); env["ok"] != true {
+		t.Fatalf("PUT /adb/settings: %v", env)
+	}
+	if env := post("/adb/usb", `{"enabled":true}`); env["ok"] != true {
+		t.Fatalf("POST /adb/usb: %v", env)
+	}
+	if env := post("/adb/tcpip", `{"enabled":true,"port":5555}`); env["ok"] != true {
+		t.Fatalf("POST /adb/tcpip: %v", env)
+	}
+	if env := post("/adb/restart", `{}`); env["ok"] != true {
+		t.Fatalf("POST /adb/restart: %v", env)
+	}
+	if env := post("/adb/apply", `{}`); env["ok"] != true {
+		t.Fatalf("POST /adb/apply: %v", env)
 	}
 
 	// web/stop：200 信封 + 触发 OnStop + 响应头标记（供 serve 循环识别）

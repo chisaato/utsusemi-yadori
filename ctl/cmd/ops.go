@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"utsusemi/ctl/internal/binmgr"
+	"utsusemi/ctl/internal/adb"
 	"utsusemi/ctl/internal/core"
 	"utsusemi/ctl/internal/dl"
 	"utsusemi/ctl/internal/gadgetcfg"
@@ -297,8 +298,22 @@ func (o *opsImpl) BinUse(binType, file string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	stopped := false
+	// 切换 server 核心：先终止旧进程并清理残留，绝不自动启动新核心
+	if binType == "server" && m.S.Server.Active != file {
+		if _, err := srv.New(o.P).Stop(); err != nil {
+			return nil, err
+		}
+		if _, err := srv.KillResiduals(o.P); err != nil {
+			return nil, err
+		}
+		stopped = true
+	}
 	if err := m.SetActive(binType, file); err != nil {
 		return nil, err
+	}
+	if binType == "server" {
+		return map[string]any{"active": file, "stopped_previous": stopped}, nil
 	}
 	return map[string]string{"active": file}, nil
 }
@@ -443,4 +458,151 @@ func (o *opsImpl) TaskCurrent() (any, error) {
 		return nil, fmt.Errorf("malformed sentinel task: %w", err)
 	}
 	return t, nil
+}
+
+func (o *opsImpl) AdbStatus() (any, error) {
+	s, err := core.LoadSettings(o.P)
+	if err != nil {
+		return nil, err
+	}
+	ctrl := adb.New()
+	st, err := ctrl.GetStatus(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"current":  st,
+		"settings": s.Adb,
+	}, nil
+}
+
+func (o *opsImpl) AdbSet(payload []byte) (any, error) {
+	s, err := core.LoadSettings(o.P)
+	if err != nil {
+		return nil, err
+	}
+	var req struct {
+		core.AdbSettings
+		Apply bool `json:"apply"`
+	}
+	// 赋初值
+	req.AdbSettings = s.Adb
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, fmt.Errorf("bad adb settings payload: %w", err)
+	}
+
+	s.Adb = req.AdbSettings
+	if s.Adb.Port <= 0 || s.Adb.Port > 65535 {
+		s.Adb.Port = 5555
+	}
+	if err := core.SaveSettings(o.P, s); err != nil {
+		return nil, err
+	}
+
+	applied := false
+	if req.Apply {
+		ctrl := adb.New()
+		if err := ctrl.Apply(context.Background(), s.Adb); err != nil {
+			return nil, fmt.Errorf("settings saved but failed to apply: %w", err)
+		}
+		applied = true
+	}
+
+	return map[string]any{
+		"saved":    true,
+		"applied":  applied,
+		"settings": s.Adb,
+	}, nil
+}
+
+func (o *opsImpl) AdbUsb(payload []byte) (any, error) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+		Save    bool `json:"save"`
+	}
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, fmt.Errorf("bad usb payload: %w", err)
+	}
+
+	ctrl := adb.New()
+	if err := ctrl.SetUsb(context.Background(), req.Enabled); err != nil {
+		return nil, err
+	}
+
+	if req.Save {
+		s, err := core.LoadSettings(o.P)
+		if err == nil {
+			s.Adb.UsbEnabled = req.Enabled
+			_ = core.SaveSettings(o.P, s)
+		}
+	}
+
+	st, err := ctrl.GetStatus(context.Background())
+	if err != nil {
+		return map[string]any{"usb_enabled": req.Enabled}, nil
+	}
+	return st, nil
+}
+
+func (o *opsImpl) AdbTcpip(payload []byte) (any, error) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+		Port    int  `json:"port"`
+		Save    bool `json:"save"`
+	}
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, fmt.Errorf("bad tcpip payload: %w", err)
+	}
+
+	if req.Port <= 0 || req.Port > 65535 {
+		req.Port = 5555
+	}
+
+	ctrl := adb.New()
+	if err := ctrl.SetTcpip(context.Background(), req.Enabled, req.Port); err != nil {
+		return nil, err
+	}
+
+	if req.Save {
+		s, err := core.LoadSettings(o.P)
+		if err == nil {
+			s.Adb.TcpipEnabled = req.Enabled
+			s.Adb.Port = req.Port
+			_ = core.SaveSettings(o.P, s)
+		}
+	}
+
+	st, err := ctrl.GetStatus(context.Background())
+	if err != nil {
+		return map[string]any{"tcpip_enabled": req.Enabled, "tcpip_port": req.Port}, nil
+	}
+	return st, nil
+}
+
+func (o *opsImpl) AdbRestart() (any, error) {
+	ctrl := adb.New()
+	if err := ctrl.RestartAdbd(context.Background()); err != nil {
+		return nil, err
+	}
+	st, err := ctrl.GetStatus(context.Background())
+	if err != nil {
+		return map[string]any{"restarted": true}, nil
+	}
+	return st, nil
+}
+
+func (o *opsImpl) AdbApply() (any, error) {
+	s, err := core.LoadSettings(o.P)
+	if err != nil {
+		return nil, err
+	}
+	ctrl := adb.New()
+	if err := ctrl.Apply(context.Background(), s.Adb); err != nil {
+		return nil, err
+	}
+	st, err := ctrl.GetStatus(context.Background())
+	if err != nil {
+		return map[string]any{"applied": true}, nil
+	}
+	return map[string]any{"applied": true, "current": st, "settings": s.Adb}, nil
 }
